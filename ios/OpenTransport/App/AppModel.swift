@@ -43,8 +43,9 @@ final class AppModel {
         if let keys = defaults.stringArray(forKey: Self.favoritesKey) {
             favorites = keys
         } else {
-            favorites = ((defaults.array(forKey: Self.legacyFavoritesKey) as? [Int]) ?? []).map(Self.stopKey)
-            defaults.set(favorites, forKey: Self.favoritesKey)
+            let migrated = ((defaults.array(forKey: Self.legacyFavoritesKey) as? [Int]) ?? []).map(Self.stopKey)
+            favorites = migrated
+            defaults.set(migrated, forKey: Self.favoritesKey)
         }
         pins = Set(defaults.stringArray(forKey: ArrivalAlerts.pinsKey) ?? [])
         // `-initialTab settings` as a launch argument opens that tab (used by CI screenshots).
