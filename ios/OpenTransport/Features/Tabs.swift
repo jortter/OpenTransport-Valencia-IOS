@@ -160,14 +160,20 @@ private struct IncidentRow: View {
 
     @Environment(\.strings) private var s
 
+    /// Renfe repeats the (cut) header at the start of the description: show
+    /// the full text once instead of twice.
+    private var repeatsTitle: Bool {
+        !incident.detail.isEmpty && incident.detail.hasPrefix(String(incident.title.prefix(40)))
+    }
+
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             ServiceLogo(network: incident.network, size: 24)
             VStack(alignment: .leading, spacing: 6) {
-                Text(incident.title)
+                Text(repeatsTitle ? incident.detail : incident.title)
                     .font(.headline)
                     .fixedSize(horizontal: false, vertical: true)
-                if !incident.detail.isEmpty {
+                if !incident.detail.isEmpty, !repeatsTitle {
                     Text(incident.detail).font(.subheadline).foregroundStyle(.secondary).lineLimit(3)
                 }
                 if !incident.date.isEmpty {
