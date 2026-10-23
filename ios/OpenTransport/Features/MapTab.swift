@@ -93,6 +93,7 @@ struct MapTab: View {
             .background(.regularMaterial, in: Capsule())
             .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
         }
+        .buttonStyle(.plain) // keep the placeholder grey, not accent-tinted
         .padding(.horizontal, 16)
         .padding(.top, 8)
     }

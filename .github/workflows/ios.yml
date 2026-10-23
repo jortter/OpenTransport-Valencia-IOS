@@ -98,14 +98,21 @@ jobs:
           path: ci-shots
 
       # Latest IPA as a pre-release, easy to open from the iPhone and install with SideStore.
+      # The release is kept and only its asset replaced (deleting and recreating it
+      # was refused once with a 403); a publishing hiccup must not fail a good build.
       - name: Publish pre-release
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release delete ios-latest --yes --cleanup-tag || true
-          gh release create ios-latest build/OpenTransport.ipa \
-            --prerelease --target "$GITHUB_SHA" --title "iOS (último build)" \
-            --notes "Build sin firmar de ${GITHUB_REF_NAME} @ ${GITHUB_SHA::7}. Instálalo con SideStore."
+          notes="Build sin firmar de ${GITHUB_REF_NAME} @ ${GITHUB_SHA::7}. Instálalo con SideStore."
+          if gh release view ios-latest >/dev/null 2>&1; then
+            gh release upload ios-latest build/OpenTransport.ipa --clobber
+            gh release edit ios-latest --notes "$notes"
+          else
+            gh release create ios-latest build/OpenTransport.ipa \
+              --prerelease --target "$GITHUB_SHA" --title "iOS (último build)" --notes "$notes"
+          fi
 
       # Screenshots on a separate branch so they can be reviewed without downloading artifacts.
       - name: Push screenshots branch
