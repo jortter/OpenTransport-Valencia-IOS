@@ -22,6 +22,8 @@ final class AppModel {
     let map = MapModel()
     let location = LocationModel()
     let metro = MetroClient()
+    let valenbisi = ValenbisiClient()
+    @ObservationIgnored private var bikesTask: Task<Void, Never>?
 
     private static let favoritesKey = "favorites"
 
@@ -65,6 +67,16 @@ final class AppModel {
             async let metroStations = metro.stations()
             await refreshIncidents()
             replacePlaces(of: .metro, with: await metroStations)
+            // Valenbisi availability changes all the time: refresh every minute, like Android.
+            bikesTask = Task { [weak self] in
+                while !Task.isCancelled {
+                    guard let self else { return }
+                    let stations = await self.valenbisi.stations()
+                    self.replacePlaces(of: .valenbisi, with: stations)
+                    self.openDemoPlace()
+                    try? await Task.sleep(for: .seconds(60))
+                }
+            }
             openDemoPlace()
         } catch {
             loadError = String(describing: error)
@@ -83,6 +95,7 @@ final class AppModel {
 
     /// `-demoPlace mt-20` (used by CI screenshots).
     private func openDemoPlace() {
+        guard map.sheet == nil else { return }
         if let id = UserDefaults.standard.string(forKey: "demoPlace"), let place = places.first(where: { $0.id == id }) {
             map.selectPlace(place)
         }
@@ -92,6 +105,10 @@ final class AppModel {
         guard !fresh.isEmpty else { return }
         places = places.filter { $0.network != network } + fresh
         placesVersion += 1
+        // Keep an open place sheet on the fresh numbers (bikes, docks…).
+        if let selected = map.selectedPlace, let updated = fresh.first(where: { $0.id == selected.id }) {
+            map.refreshSelectedPlace(updated)
+        }
     }
 
     func place(_ id: String) -> Place? { places.first { $0.id == id } }

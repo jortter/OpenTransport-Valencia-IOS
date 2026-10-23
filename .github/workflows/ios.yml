@@ -70,8 +70,9 @@ jobs:
           shot 2-stop -initialTab map -demoStop 7
           shot 3-line -initialTab map -demoLine 19
           shot 4-metro -initialTab map -demoPlace mt-20
-          shot 5-alerts -initialTab alerts
-          shot 6-settings -initialTab settings -language es
+          shot 5-bikes -initialTab map -demoPlace vb-1
+          shot 6-alerts -initialTab alerts
+          shot 7-settings -initialTab settings -language es
           xcrun simctl spawn "$UDID" log show --last 3m --predicate 'process == "OpenTransport"' --style compact > ci-shots/app.log 2>&1 || true
 
       - name: Build unsigned IPA

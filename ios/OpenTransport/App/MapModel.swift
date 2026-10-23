@@ -81,6 +81,12 @@ final class MapModel {
         move(.center(LonLat(lon: place.lon, lat: place.lat), zoom: 16.5))
     }
 
+    /// Same place with fresh data (no camera move, sheet stays).
+    func refreshSelectedPlace(_ place: Place) {
+        guard selectedPlace?.id == place.id else { return }
+        selectedPlace = place
+    }
+
     func selectLine(_ line: String) {
         guard let route = transit?.routes[line] else { return }
         if currentLine != line { live.track(line: line) }
