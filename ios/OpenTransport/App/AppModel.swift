@@ -221,7 +221,7 @@ final class AppModel {
         return result
     }
 
-    static func stopKey(_ id: Int) -> String { "emt-\(id)" }
+    nonisolated static func stopKey(_ id: Int) -> String { "emt-\(id)" }
 
     func isPinned(_ pin: String) -> Bool { pins.contains(pin) }
 

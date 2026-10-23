@@ -15,8 +15,8 @@ final class ArrivalAlerts {
     private var task: Task<Void, Never>?
     private var notified: [String: Date] = [:]
 
-    static func stopPin(_ stopId: Int, _ line: String) -> String { "\(stopId):\(line)" }
-    static func metrobusPin(_ placeId: String, _ line: String) -> String { "\(placeId):\(line)" }
+    nonisolated static func stopPin(_ stopId: Int, _ line: String) -> String { "\(stopId):\(line)" }
+    nonisolated static func metrobusPin(_ placeId: String, _ line: String) -> String { "\(placeId):\(line)" }
 
     static func requestPermission() {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
