@@ -5,11 +5,12 @@ final class OpenTransportCoreTests: XCTestCase {
     /// The Android assets folder, shared with the iOS app.
     private var assets: URL {
         URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent() // OpenTransportCoreTests
-            .deletingLastPathComponent() // Tests
-            .deletingLastPathComponent() // OpenTransportCore
-            .deletingLastPathComponent() // Packages
-            .deletingLastPathComponent() // ios
+            .deletingLastPathComponent() // -> OpenTransportCoreTests/
+            .deletingLastPathComponent() // -> Tests/
+            .deletingLastPathComponent() // -> OpenTransportCore/
+            .deletingLastPathComponent() // -> Packages/
+            .deletingLastPathComponent() // -> ios/
+            .deletingLastPathComponent() // -> repository root
             .appendingPathComponent("app/src/main/assets")
     }
 

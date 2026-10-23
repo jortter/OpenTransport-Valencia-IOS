@@ -106,19 +106,28 @@ public final class EmtClient: @unchecked Sendable {
     // MARK: - Incidents
 
     public func incidents(force: Bool = false) async -> [Incident] {
-        lock.lock()
-        let cached = incidentCache
-        lock.unlock()
+        let cached = cachedIncidents()
         if let cached, !force, Date().timeIntervalSince(cached.0) < Self.incidentCacheSeconds { return cached.1 }
         guard let html = try? await HTTP.get(URL(string: "https://www.emtvalencia.es/wp/estado-del-servicio/")!,
                                              headers: ["User-Agent": Self.webUserAgent]) else {
             return cached?.1 ?? []
         }
         let parsed = Self.parseIncidents(html)
-        lock.lock()
-        incidentCache = (Date(), parsed)
-        lock.unlock()
+        storeIncidents(parsed)
         return parsed
+    }
+
+    // Synchronous so NSLock is never held across an await.
+    private func cachedIncidents() -> (Date, [Incident])? {
+        lock.lock()
+        defer { lock.unlock() }
+        return incidentCache
+    }
+
+    private func storeIncidents(_ incidents: [Incident]) {
+        lock.lock()
+        defer { lock.unlock() }
+        incidentCache = (Date(), incidents)
     }
 
     static func parseIncidents(_ html: String) -> [Incident] {
