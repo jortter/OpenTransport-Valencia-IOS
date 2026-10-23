@@ -14,8 +14,8 @@ struct MapTab: View {
             if let transit = model.transit {
                 TransitMapView(
                     scene: scene(transit),
-                    routes: transit.routes,
-                    metroColors: model.metroAssets.lineColors,
+                    routes: model.mapRoutes,
+                    metroColors: model.lineColors,
                     live: map.live,
                     dark: colorScheme == .dark,
                     cameraRequest: map.cameraRequest,
@@ -24,7 +24,7 @@ struct MapTab: View {
                     recenterRequest: recenterRequest,
                     onSelectStop: { map.selectStop($0) },
                     onSelectBus: { map.followBus($0) },
-                    onSelectPlace: { id in if let place = model.place(id) { map.selectPlace(place) } }
+                    onSelectPlace: { id in if let place = model.place(id) { model.select(place) } }
                 )
                 .ignoresSafeArea(edges: .top)
                 .overlay(alignment: .top) { searchButton }
@@ -64,7 +64,7 @@ struct MapTab: View {
             SearchView(
                 onPickStop: { id in pick { map.selectStop(id) } },
                 onPickLine: { line in pick { map.selectLine(line) } },
-                onPickPlace: { place in pick { map.selectPlace(place) } }
+                onPickPlace: { place in pick { model.select(place) } }
             )
         }
     }
