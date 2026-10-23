@@ -19,6 +19,11 @@ struct OpenTransportApp: App {
                 .environment(\.strings, Strings(Language.of(languageCode)))
                 .preferredColorScheme(AppTheme(rawValue: theme)?.colorScheme)
                 .task { await model.load() }
+                // opentransport://stop/<id> from the widget.
+                .onOpenURL { url in
+                    guard url.scheme == "opentransport", url.host == "stop", let id = Int(url.lastPathComponent) else { return }
+                    model.openStop(id)
+                }
         }
     }
 }

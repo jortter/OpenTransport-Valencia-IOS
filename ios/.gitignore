@@ -1,5 +1,6 @@
 OpenTransport.xcodeproj/
 OpenTransport/Info.plist
+OpenTransportWidget/Info.plist
 build/
 .build/
 .swiftpm/

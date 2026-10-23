@@ -29,10 +29,15 @@ targets:
     dependencies:
       - package: MapLibre
       - package: OpenTransportCore
+      - target: OpenTransportWidget
     info:
       path: OpenTransport/Info.plist
       properties:
         CFBundleDisplayName: OpenTransport
+        # opentransport://stop/<id>, opened by the widget.
+        CFBundleURLTypes:
+          - CFBundleURLName: com.jortter.opentransport
+            CFBundleURLSchemes: [opentransport]
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
@@ -47,6 +52,32 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         CODE_SIGN_STYLE: Manual
         CODE_SIGNING_ALLOWED: "NO"
+  OpenTransportWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: OpenTransportWidget
+      # Stop names for the configuration search come from the shared assets.
+      - path: ../app/src/main/assets
+        type: folder
+        buildPhase: resources
+    dependencies:
+      - package: OpenTransportCore
+    info:
+      path: OpenTransportWidget/Info.plist
+      properties:
+        CFBundleDisplayName: OpenTransport
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.jortter.opentransport.widget
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGNING_ALLOWED: "NO"
+        SKIP_INSTALL: "YES"
 schemes:
   OpenTransport:
     build:

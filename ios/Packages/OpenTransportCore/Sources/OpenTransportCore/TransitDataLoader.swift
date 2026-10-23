@@ -30,6 +30,11 @@ public enum TransitDataLoader {
         return TransitData(stops: all, stopsById: byId, routes: routes.merging(metro.1) { _, new in new })
     }
 
+    /// Just the EMT stops (the widget needs names, not routes).
+    public static func load(stopsOnly data: Data) throws -> [Stop] {
+        try parseStops(data)
+    }
+
     private static func read(_ directory: URL, _ name: String) throws -> Data {
         let url = directory.appendingPathComponent(name)
         guard let data = try? Data(contentsOf: url) else { throw LoadError.missing(name) }
