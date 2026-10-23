@@ -453,6 +453,16 @@ struct TransitMapView: UIViewRepresentable {
                     ne: CLLocationCoordinate2D(latitude: bounds.north, longitude: bounds.east))
                 map.setVisibleCoordinateBounds(coordinateBounds, edgePadding: UIEdgeInsets(top: 60, left: 40, bottom: 40, right: 40),
                                                animated: true, completionHandler: nil)
+            case .pitch(let pitch):
+                let camera = map.camera
+                camera.pitch = pitch
+                map.setCamera(camera, withDuration: 0.4, animationTimingFunction: nil)
+            case .reset(let bounds):
+                let camera = map.camera
+                camera.pitch = 0
+                camera.heading = 0
+                map.setCamera(camera, animated: true)
+                if let bounds { apply(CameraRequest(id: request.id, kind: .fit(bounds)), on: map) }
             }
         }
 

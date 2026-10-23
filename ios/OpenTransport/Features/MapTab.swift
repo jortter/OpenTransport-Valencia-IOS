@@ -7,6 +7,9 @@ struct MapTab: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var recenterRequest = 0
     @State private var showSearch = false
+    @State private var showLayers = false
+    @AppStorage(MapPreferences.networksKey) private var networksSetting = MapPreferences.defaultNetworks
+    @AppStorage(MapPreferences.styleKey) private var styleSetting = MapStyle.auto.rawValue
 
     var body: some View {
         @Bindable var map = model.map
@@ -17,7 +20,7 @@ struct MapTab: View {
                     routes: model.mapRoutes,
                     metroColors: model.lineColors,
                     live: map.live,
-                    dark: colorScheme == .dark,
+                    dark: (MapStyle(rawValue: styleSetting) ?? .auto).isDark(system: colorScheme),
                     cameraRequest: map.cameraRequest,
                     followedBus: map.followedBus,
                     follow3D: map.follow3D,
@@ -28,20 +31,7 @@ struct MapTab: View {
                 )
                 .ignoresSafeArea(edges: .top)
                 .overlay(alignment: .top) { searchButton }
-                .overlay(alignment: .bottomTrailing) {
-                    Button {
-                        recenterRequest += 1
-                    } label: {
-                        Image(systemName: "location.fill")
-                            .font(.title3)
-                            .frame(width: 48, height: 48)
-                            .background(.regularMaterial, in: Circle())
-                            .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
-                    }
-                    .accessibilityLabel(s.myLocation)
-                    .padding(.trailing, 16)
-                    .padding(.bottom, 40) // clear of MapLibre's attribution button
-                }
+                .overlay(alignment: .bottomTrailing) { mapButtons }
             } else if let error = model.loadError {
                 ContentUnavailableView(error, systemImage: "exclamationmark.triangle")
             } else {
@@ -60,6 +50,9 @@ struct MapTab: View {
             .presentationDetents([.medium, .large])
             .presentationBackgroundInteraction(.enabled(upThrough: .medium))
         }
+        .sheet(isPresented: $showLayers) {
+            LayersSheet().presentationDetents([.medium, .large])
+        }
         .fullScreenCover(isPresented: $showSearch) {
             SearchView(
                 onPickStop: { id in pick { map.selectStop(id) } },
@@ -69,18 +62,45 @@ struct MapTab: View {
         }
     }
 
+    /// Layers, 3D, north-up and "my location", bottom right like Android.
+    private var mapButtons: some View {
+        VStack(spacing: 12) {
+            roundButton("square.3.layers.3d", label: s.mapLayers) { present { showLayers = true } }
+            roundButton(model.map.tilted ? "view.2d" : "view.3d", label: s.view3D) { model.map.toggleTilt() }
+            roundButton("location.north.line.fill", label: s.resetView) { model.map.resetView() }
+            roundButton("location.fill", label: s.myLocation) { recenterRequest += 1 }
+        }
+        .padding(.trailing, 16)
+        .padding(.bottom, 40) // clear of MapLibre's attribution button
+    }
+
+    private func roundButton(_ systemImage: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.title3)
+                .frame(width: 48, height: 48)
+                .background(.regularMaterial, in: Circle())
+                .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
+        }
+        .accessibilityLabel(label)
+    }
+
+    /// Only one presentation at a time: close the open sheet first.
+    private func present(_ show: @escaping () -> Void) {
+        if model.map.sheet != nil {
+            model.map.close()
+            Task {
+                try? await Task.sleep(for: .milliseconds(450))
+                show()
+            }
+        } else {
+            show()
+        }
+    }
+
     private var searchButton: some View {
         Button {
-            // Only one presentation at a time: close the open sheet first.
-            if model.map.sheet != nil {
-                model.map.close()
-                Task {
-                    try? await Task.sleep(for: .milliseconds(450))
-                    showSearch = true
-                }
-            } else {
-                showSearch = true
-            }
+            present { showSearch = true }
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
@@ -129,9 +149,12 @@ struct MapTab: View {
                             contextLines: unique(place.lines), sheetVisible: true,
                             placesKey: "place:\(place.id)", places: [place])
         }
-        return MapScene(stopsKey: "all", stops: transit.stops.filter { !$0.metro }, mainLine: nil,
-                        contextLines: [], sheetVisible: map.sheet != nil,
-                        placesKey: "all:\(model.placesVersion)", places: model.places)
+        let networks = MapPreferences.networks(networksSetting)
+        return MapScene(stopsKey: networks.contains(.emt) ? "all" : "none",
+                        stops: networks.contains(.emt) ? transit.stops.filter { !$0.metro } : [],
+                        mainLine: nil, contextLines: [], sheetVisible: map.sheet != nil,
+                        placesKey: "all:\(model.placesVersion):\(networksSetting)",
+                        places: model.places.filter { networks.contains($0.network) })
     }
 
     private func unique(_ lines: [String]) -> [String] {
