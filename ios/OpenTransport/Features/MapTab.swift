@@ -8,6 +8,8 @@ struct MapTab: View {
     @State private var recenterRequest = 0
     @State private var showSearch = false
     @State private var showLayers = false
+    /// The nearby sheet pops once, on the first location fix (until closed).
+    @State private var nearbyShown = false
     @AppStorage(MapPreferences.networksKey) private var networksSetting = MapPreferences.defaultNetworks
     @AppStorage(MapPreferences.styleKey) private var styleSetting = MapStyle.auto.rawValue
 
@@ -45,10 +47,17 @@ struct MapTab: View {
                 case .line(let line): LineSheet(line: line)
                 case .bus(let number): FollowSheet(number: number)
                 case .place: if let place = map.selectedPlace { PlaceSheet(place: place) }
+                case .nearby: NearbySheet()
                 }
             }
             .presentationDetents([.medium, .large])
             .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+        }
+        .onChange(of: model.location.location != nil) { _, located in
+            if located, !nearbyShown, model.map.sheet == nil, model.tab == .map, !showSearch, !showLayers {
+                nearbyShown = true
+                model.map.showNearby()
+            }
         }
         .sheet(isPresented: $showLayers) {
             LayersSheet().presentationDetents([.medium, .large])
@@ -68,7 +77,10 @@ struct MapTab: View {
             roundButton("square.3.layers.3d", label: s.mapLayers) { present { showLayers = true } }
             roundButton(model.map.tilted ? "view.2d" : "view.3d", label: s.view3D) { model.map.toggleTilt() }
             roundButton("location.north.line.fill", label: s.resetView) { model.map.resetView() }
-            roundButton("location.fill", label: s.myLocation) { recenterRequest += 1 }
+            roundButton("location.fill", label: s.myLocation) {
+                recenterRequest += 1
+                model.map.showNearby()
+            }
         }
         .padding(.trailing, 16)
         .padding(.bottom, 40) // clear of MapLibre's attribution button

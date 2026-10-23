@@ -10,8 +10,12 @@ final class AppModel {
     private(set) var transit: TransitData?
     private(set) var client: EmtClient?
     private(set) var loadError: String?
-    private(set) var favorites: [Int]
+    /// Saved stops and places, keyed like Android: "emt-<stop>" or a place id ("mt-20", "vb-1"…).
+    private(set) var favorites: [String]
     var tab: AppTab
+    /// Stop+line pairs to alert about ("<stop>:<line>" or "mb-<code>:<line>").
+    private(set) var pins: Set<String>
+    private let alerts = ArrivalAlerts()
     /// Service alerts of every network, shown in Alerts and in stop/place sheets.
     private(set) var incidents: [Incident]?
     /// Points of the other networks (Metro stations so far).
@@ -31,10 +35,18 @@ final class AppModel {
     @ObservationIgnored private var metrobusTask: Task<Void, Never>?
     @ObservationIgnored private var bikesTask: Task<Void, Never>?
 
-    private static let favoritesKey = "favorites"
+    private static let favoritesKey = "favorite_keys"
+    private static let legacyFavoritesKey = "favorites" // [Int] EMT stop ids from the first builds
 
     init() {
-        favorites = (UserDefaults.standard.array(forKey: Self.favoritesKey) as? [Int]) ?? []
+        let defaults = UserDefaults.standard
+        if let keys = defaults.stringArray(forKey: Self.favoritesKey) {
+            favorites = keys
+        } else {
+            favorites = ((defaults.array(forKey: Self.legacyFavoritesKey) as? [Int]) ?? []).map(Self.stopKey)
+            defaults.set(favorites, forKey: Self.favoritesKey)
+        }
+        pins = Set(defaults.stringArray(forKey: ArrivalAlerts.pinsKey) ?? [])
         // `-initialTab settings` as a launch argument opens that tab (used by CI screenshots).
         tab = AppTab(rawValue: UserDefaults.standard.string(forKey: "initialTab") ?? "") ?? .map
     }
@@ -74,6 +86,7 @@ final class AppModel {
             replacePlaces(of: .rodalies, with: rodaliesData.places)
             map.configure(transit: data, client: emt)
             location.start()
+            alerts.start(model: self)
             openDemoSelection()
             async let metroStations = metro.stations()
             await refreshIncidents()
@@ -199,14 +212,32 @@ final class AppModel {
         return result
     }
 
-    func isFavorite(_ id: Int) -> Bool { favorites.contains(id) }
+    static func stopKey(_ id: Int) -> String { "emt-\(id)" }
 
-    func toggleFavorite(_ id: Int) {
-        if let index = favorites.firstIndex(of: id) {
+    func isPinned(_ pin: String) -> Bool { pins.contains(pin) }
+
+    func togglePin(_ pin: String) {
+        if pins.remove(pin) == nil {
+            pins.insert(pin)
+            ArrivalAlerts.requestPermission()
+        }
+        UserDefaults.standard.set(Array(pins), forKey: ArrivalAlerts.pinsKey)
+    }
+
+    func isFavorite(_ key: String) -> Bool { favorites.contains(key) }
+
+    func toggleFavorite(_ key: String) {
+        if let index = favorites.firstIndex(of: key) {
             favorites.remove(at: index)
         } else {
-            favorites.append(id)
+            favorites.append(key)
         }
         UserDefaults.standard.set(favorites, forKey: Self.favoritesKey)
+    }
+
+    /// Switches to the map and opens a place there (from Saved, nearby…).
+    func openPlace(_ place: Place) {
+        tab = .map
+        select(place)
     }
 }

@@ -1,4 +1,5 @@
 import SwiftUI
+import UserNotifications
 import OpenTransportCore
 
 @main
@@ -6,6 +7,10 @@ struct OpenTransportApp: App {
     @State private var model = AppModel()
     @AppStorage("language") private var languageCode = AppModel.defaultLanguage.rawValue
     @AppStorage("theme") private var theme = AppTheme.system.rawValue
+
+    init() {
+        UNUserNotificationCenter.current().delegate = NotificationPresenter.shared
+    }
 
     var body: some Scene {
         WindowGroup {

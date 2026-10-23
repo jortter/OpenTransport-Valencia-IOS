@@ -4,27 +4,113 @@ import OpenTransportCore
 struct SavedTab: View {
     @Environment(AppModel.self) private var model
     @Environment(\.strings) private var s
+    @State private var service: Network?
+
+    /// A saved row: an EMT stop or a place of another network.
+    enum Saved: Identifiable {
+        case stop(Stop)
+        case place(Place)
+
+        var id: String {
+            switch self {
+            case .stop(let stop): return AppModel.stopKey(stop.id)
+            case .place(let place): return place.id
+            }
+        }
+
+        var network: Network {
+            switch self {
+            case .stop: return .emt
+            case .place(let place): return place.network
+            }
+        }
+    }
 
     var body: some View {
+        let items: [Saved] = model.favorites.compactMap { key in
+            if key.hasPrefix("emt-"), let stop = model.transit?.stopsById[String(key.dropFirst(4))] { return .stop(stop) }
+            return model.place(key).map(Saved.place)
+        }
+        let shown = items.filter { service == nil || $0.network == service }
+
         NavigationStack {
-            Group {
-                let stops = model.favorites.compactMap { model.transit?.stopsById[String($0)] }
-                if stops.isEmpty {
-                    ContentUnavailableView(s.starToSave, systemImage: "star")
+            VStack(spacing: 0) {
+                ServiceFilter(selected: $service)
+                if shown.isEmpty {
+                    ContentUnavailableView(s.starToSave, systemImage: "star").frame(maxHeight: .infinity)
                 } else {
-                    List(stops) { stop in
+                    List(shown) { item in
                         Button {
-                            model.openStop(stop.id)
+                            switch item {
+                            case .stop(let stop): model.openStop(stop.id)
+                            case .place(let place): model.openPlace(place)
+                            }
                         } label: {
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text(stop.cleanName).foregroundStyle(.primary)
-                                LineBadges(lines: stop.lines)
+                            SavedRow(item: item)
+                        }
+                        .tint(.primary)
+                        .swipeActions {
+                            Button(role: .destructive) {
+                                model.toggleFavorite(item.id)
+                            } label: {
+                                Label(s.remove, systemImage: "trash")
                             }
                         }
                     }
+                    .listStyle(.plain)
                 }
             }
             .navigationTitle(s.saved)
+        }
+    }
+
+    /// Shows the next arrival once loaded (Android's `SavedRow`).
+    struct SavedRow: View {
+        let item: Saved
+
+        @Environment(AppModel.self) private var model
+        @Environment(\.strings) private var s
+        @State private var next: String?
+
+        var body: some View {
+            HStack(spacing: 12) {
+                ServiceLogo(network: item.network, size: 28)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title).lineLimit(1)
+                    Text(next.map(s.nextLabel) ?? subtitle)
+                        .font(.caption)
+                        .foregroundStyle(next == nil ? Color.secondary : Color.accentColor)
+                        .lineLimit(1)
+                }
+            }
+            .task(id: item.id) { next = await loadNext() }
+        }
+
+        private var title: String {
+            switch item {
+            case .stop(let stop): return stop.cleanName
+            case .place(let place): return place.name
+            }
+        }
+
+        private var subtitle: String {
+            switch item {
+            case .stop(let stop): return stop.lines.joined(separator: " · ")
+            case .place(let place): return placeSubtitle(place, s)
+            }
+        }
+
+        private func loadNext() async -> String? {
+            switch item {
+            case .stop(let stop):
+                guard let first = await model.client?.stop(id: stop.id)?.arrivals.first else { return nil }
+                return "\(first.line) · \(EmtClient.etaLabel(first))"
+            case .place(let place) where place.network == .metrobus:
+                guard let first = await model.metrobus.arrivals(code: String(place.id.dropFirst(3))).first else { return nil }
+                return "\(first.line.dropFirst(2)) · \(first.minutes)"
+            case .place:
+                return nil
+            }
         }
     }
 }
@@ -158,6 +244,7 @@ struct SettingsTab: View {
     @AppStorage("language") private var languageCode = AppModel.defaultLanguage.rawValue
     @AppStorage("theme") private var theme = AppTheme.system.rawValue
     @AppStorage(MapPreferences.styleKey) private var mapStyle = MapStyle.auto.rawValue
+    @AppStorage(ArrivalAlerts.minutesKey) private var alertMinutes = ArrivalAlerts.defaultMinutes
 
     var body: some View {
         NavigationStack {
@@ -180,6 +267,15 @@ struct SettingsTab: View {
                 }
                 Picker(s.mapStyle, selection: $mapStyle) {
                     ForEach(MapStyle.allCases) { Text($0.label(s)).tag($0.rawValue) }
+                }
+                Section {
+                    Picker(s.arrivalAlerts, selection: $alertMinutes) {
+                        ForEach([5, 10, 15], id: \.self) { Text("\($0) min").tag($0) }
+                    }
+                } header: {
+                    Text(s.arrivalAlerts)
+                } footer: {
+                    Text("\(s.arrivalAlertsDesc) \(s.alertsWhileOpen)")
                 }
                 Section(s.aboutSources) {
                     Text(s.aboutUnofficial).font(.footnote).foregroundStyle(.secondary)

@@ -9,6 +9,7 @@ enum MapSheet: Identifiable, Hashable {
     case line(String)
     case bus(Int)
     case place(String)
+    case nearby
 
     var id: String {
         switch self {
@@ -16,6 +17,7 @@ enum MapSheet: Identifiable, Hashable {
         case .line(let line): return "line-\(line)"
         case .bus(let number): return "bus-\(number)"
         case .place(let id): return "place-\(id)"
+        case .nearby: return "nearby"
         }
     }
 }
@@ -99,6 +101,14 @@ final class MapModel {
         currentLine = line
         present(.line(line))
         if let bounds = route.bounds { move(.fit(bounds)) }
+    }
+
+    /// "Stops near me" (Android pops it on the first location fix and on the
+    /// location button).
+    func showNearby() {
+        currentLine = nil
+        live.track(line: nil)
+        present(.nearby)
     }
 
     /// Follows one live bus of the focused line; the camera tracks it.
