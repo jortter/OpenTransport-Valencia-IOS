@@ -37,6 +37,9 @@ struct TransitMapView: UIViewRepresentable {
     let live: LiveBuses
     let dark: Bool
     var cameraRequest: CameraRequest?
+    /// The camera trails this bus every frame (Android's `follow`).
+    var followedBus: Int?
+    var follow3D = false
     /// Bumped by the "my location" button; each change recentres on the user.
     var recenterRequest: Int = 0
     var onSelectStop: (Int) -> Void
@@ -104,6 +107,7 @@ struct TransitMapView: UIViewRepresentable {
         private var appliedScene: MapScene?
         private var displayLink: CADisplayLink?
         private var drewNoBuses = false
+        private var lastFollowed: Int?
 
         static let stopsSource = "emt-stops"
         static let stopsLayer = "emt-stops"
@@ -332,6 +336,31 @@ struct TransitMapView: UIViewRepresentable {
                 feature.attributes = ["line": bus.line, "dir": bus.direction ?? "", "num": bus.number]
                 return feature
             })
+            followCamera(tracker)
+        }
+
+        /// Keeps the followed bus centred, heading up; flat or 3D behind it.
+        private func followCamera(_ tracker: BusTracker) {
+            guard let map else { return }
+            guard let number = parent.followedBus, let bus = tracker.buses.first(where: { $0.number == number }) else {
+                if lastFollowed != nil {
+                    lastFollowed = nil
+                    let camera = map.camera
+                    camera.pitch = 0
+                    map.setCamera(camera, animated: true)
+                }
+                return
+            }
+            let coordinate = CLLocationCoordinate2D(latitude: bus.render.lat, longitude: bus.render.lon)
+            if lastFollowed != number {
+                lastFollowed = number
+                map.setCenter(coordinate, zoomLevel: max(map.zoomLevel, 16.5), direction: bus.bearing, animated: false)
+            }
+            let camera = map.camera
+            camera.centerCoordinate = coordinate
+            camera.heading = bus.bearing
+            camera.pitch = parent.follow3D ? 58 : 0
+            map.setCamera(camera, animated: false)
         }
 
         // MARK: Taps

@@ -8,6 +8,10 @@ extension Strings {
     public var stopCode: String { pick("Parada", "Stop", "Parada") }
     public var refresh: String { pick("Actualizar", "Refresh", "Actualitzar") }
 
+    public func busTitle(_ number: Int) -> String { pick("Autobús \(number)", "Bus \(number)", "Autobús \(number)") }
+    public var nextStops: String { pick("Próximas paradas", "Next stops", "Pròximes parades") }
+    public var view3D: String { pick("Vista 3D", "3D view", "Vista 3D") }
+
     public func lineTitle(_ line: String) -> String { pick("Línea \(line)", "Line \(line)", "Línia \(line)") }
 
     public func liveBuses(_ count: Int) -> String {
