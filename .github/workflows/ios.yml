@@ -116,6 +116,22 @@ jobs:
               --prerelease --target "$GITHUB_SHA" --title "iOS (último build)" --notes "$notes"
           fi
 
+      # The same IPA on a one-commit branch: a fixed raw link that works even when
+      # GitHub refuses the workflow token on the releases API (403 since 23 Oct).
+      - name: Push IPA branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p build/branch && cd build/branch
+          cp ../OpenTransport.ipa .
+          printf 'Build sin firmar de %s @ %s\n' "$GITHUB_REF_NAME" "$GITHUB_SHA" > README.md
+          git init -q -b ios-build
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -qm "IPA for ${GITHUB_SHA::7}"
+          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" ios-build
+
       # Screenshots on a separate branch so they can be reviewed without downloading artifacts.
       - name: Push screenshots branch
         if: always()
