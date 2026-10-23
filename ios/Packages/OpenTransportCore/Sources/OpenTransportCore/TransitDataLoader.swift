@@ -171,6 +171,11 @@ public struct MetroAssets: Sendable {
     /// "M1" → 0xFEC601
     public let lineColors: [String: Int]
 
+    public init(stationNames: [Int: String], lineColors: [String: Int]) {
+        self.stationNames = stationNames
+        self.lineColors = lineColors
+    }
+
     public static func load(from directory: URL) -> MetroAssets {
         guard let data = try? Data(contentsOf: directory.appendingPathComponent("metrovalencia.geojson")) else {
             return MetroAssets(stationNames: [:], lineColors: [:])
