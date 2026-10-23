@@ -24,16 +24,21 @@ struct MapScene: Equatable {
     var contextLines: [String]
     /// The map is partly covered by a sheet: keep content in the visible part.
     var sheetVisible: Bool
+    /// Points of the other networks, and a cheap identity for them.
+    var placesKey: String = ""
+    var places: [Place] = []
 
     static func == (a: MapScene, b: MapScene) -> Bool {
         a.stopsKey == b.stopsKey && a.mainLine == b.mainLine && a.contextLines == b.contextLines
-            && a.sheetVisible == b.sheetVisible
+            && a.sheetVisible == b.sheetVisible && a.placesKey == b.placesKey
     }
 }
 
 struct TransitMapView: UIViewRepresentable {
     let scene: MapScene
     let routes: [String: BusRoute]
+    /// Metro line brand colours ("M1" → 0xFEC601) for their route shapes.
+    let metroColors: [String: Int]
     let live: LiveBuses
     let dark: Bool
     var cameraRequest: CameraRequest?
@@ -44,6 +49,7 @@ struct TransitMapView: UIViewRepresentable {
     var recenterRequest: Int = 0
     var onSelectStop: (Int) -> Void
     var onSelectBus: (Int) -> Void
+    var onSelectPlace: (String) -> Void
 
     private var styleURL: URL { dark ? styleDark : styleLight }
 
@@ -116,6 +122,10 @@ struct TransitMapView: UIViewRepresentable {
         static let contextSource = "emt-context"
         static let mainSource = "emt-main"
         static let busesSource = "emt-buses"
+        static let placesSource = "emt-places"
+        static let placesLayer = "emt-places"
+        static let placesClustersLayer = "emt-places-clusters"
+        static let contextLayer = "emt-context-routes"
 
         init(_ parent: TransitMapView) {
             self.parent = parent
@@ -139,12 +149,8 @@ struct TransitMapView: UIViewRepresentable {
             // Route lines first so stops and buses draw on top of them.
             let context = MLNShapeSource(identifier: Self.contextSource, shape: nil, options: nil)
             style.addSource(context)
-            let contextLayer = MLNLineStyleLayer(identifier: "emt-context-routes", source: context)
-            contextLayer.lineColor = NSExpression(forMLNMatchingKey: NSExpression(forKeyPath: "ci"),
-                                                  in: Dictionary(uniqueKeysWithValues: linePaletteUIColors.enumerated().map {
-                                                      (NSExpression(forConstantValue: $0.offset), NSExpression(forConstantValue: $0.element))
-                                                  }),
-                                                  default: NSExpression(forConstantValue: idaColor))
+            let contextLayer = MLNLineStyleLayer(identifier: Self.contextLayer, source: context)
+            contextLayer.lineColor = NSExpression(forConstantValue: idaColor) // per line in applyScene
             contextLayer.lineWidth = NSExpression(forConstantValue: 4.2)
             contextLayer.lineOpacity = NSExpression(forConstantValue: 0.9)
             contextLayer.lineCap = NSExpression(forConstantValue: "round")
@@ -192,6 +198,8 @@ struct TransitMapView: UIViewRepresentable {
             points.circleStrokeWidth = NSExpression(forConstantValue: 1.5)
             style.addLayer(points)
 
+            addPlaceLayers(to: style)
+
             let buses = MLNShapeSource(identifier: Self.busesSource, shape: nil, options: nil)
             style.addSource(buses)
             let busDots = MLNCircleStyleLayer(identifier: "emt-buses", source: buses)
@@ -209,6 +217,89 @@ struct TransitMapView: UIViewRepresentable {
             busNumbers.textAllowsOverlap = NSExpression(forConstantValue: true)
             busNumbers.textIgnoresPlacement = NSExpression(forConstantValue: true)
             style.addLayer(busNumbers)
+        }
+
+        /// Metro, Valenbisi, Metrobús and Rodalies points: clustered when zoomed
+        /// out, each with its network logo on a brand-coloured disc.
+        private func addPlaceLayers(to style: MLNStyle) {
+            for network in Network.allCases {
+                if let icon = Self.serviceIcon(network) { style.setImage(icon, forName: Self.iconName(network)) }
+            }
+            let places = MLNShapeSource(identifier: Self.placesSource, features: [], options: [
+                .clustered: true,
+                .clusterRadius: 45,
+                .maximumZoomLevelForClustering: 13,
+            ])
+            style.addSource(places)
+
+            let clusters = MLNCircleStyleLayer(identifier: Self.placesClustersLayer, source: places)
+            clusters.predicate = NSPredicate(format: "cluster == YES")
+            clusters.circleColor = NSExpression(forConstantValue: idaColor)
+            clusters.circleOpacity = NSExpression(forConstantValue: 0.9)
+            clusters.circleRadius = NSExpression(forConstantValue: 15)
+            clusters.circleStrokeColor = NSExpression(forConstantValue: UIColor.white)
+            clusters.circleStrokeWidth = NSExpression(forConstantValue: 1.5)
+            style.addLayer(clusters)
+
+            let count = MLNSymbolStyleLayer(identifier: "emt-places-cluster-count", source: places)
+            count.predicate = NSPredicate(format: "cluster == YES")
+            count.text = NSExpression(format: "CAST(point_count, 'NSString')")
+            count.textColor = NSExpression(forConstantValue: UIColor.white)
+            count.textFontSize = NSExpression(forConstantValue: 12)
+            count.textAllowsOverlap = NSExpression(forConstantValue: true)
+            style.addLayer(count)
+
+            let icons = MLNSymbolStyleLayer(identifier: Self.placesLayer, source: places)
+            icons.predicate = NSPredicate(format: "cluster != YES")
+            icons.iconImageName = NSExpression(forMLNMatchingKey: NSExpression(forKeyPath: "network"),
+                                               in: Dictionary(uniqueKeysWithValues: Network.allCases.map {
+                                                   (NSExpression(forConstantValue: $0.rawValue), NSExpression(forConstantValue: Self.iconName($0)))
+                                               }),
+                                               default: NSExpression(forConstantValue: Self.iconName(.metro)))
+            icons.iconAllowsOverlap = NSExpression(forConstantValue: true)
+            icons.iconIgnoresPlacement = NSExpression(forConstantValue: true)
+            style.addLayer(icons)
+
+            let labels = MLNSymbolStyleLayer(identifier: "emt-places-labels", source: places)
+            labels.predicate = NSPredicate(format: "cluster != YES")
+            labels.minimumZoomLevel = 14.5
+            labels.text = NSExpression(forKeyPath: "name")
+            labels.textFontSize = NSExpression(forConstantValue: 11)
+            labels.textColor = NSExpression(forConstantValue: UIColor.white)
+            labels.textHaloColor = NSExpression(forConstantValue: UIColor.black.withAlphaComponent(0.7))
+            labels.textHaloWidth = NSExpression(forConstantValue: 1.2)
+            labels.textOffset = NSExpression(forConstantValue: NSValue(cgVector: CGVector(dx: 0, dy: 1.6)))
+            style.addLayer(labels)
+        }
+
+        static func iconName(_ network: Network) -> String { "\(network.rawValue.lowercased())-icon" }
+
+        /// The network logo on its brand-coloured disc (Android's `serviceIcon`).
+        static func serviceIcon(_ network: Network) -> UIImage? {
+            guard let url = Bundle.main.resourceURL?.appendingPathComponent("assets").appendingPathComponent(network.asset),
+                  let logo = UIImage(contentsOfFile: url.path) else { return nil }
+            let background: UIColor
+            switch network {
+            case .emt: background = .white
+            case .metro: background = UIColor(hex: 0xFF8A80)
+            case .valenbisi, .metrobus: background = UIColor(hex: 0x90CAF9)
+            case .rodalies: background = UIColor(hex: 0xE30613)
+            }
+            let size = CGSize(width: 30, height: 30)
+            return UIGraphicsImageRenderer(size: size).image { _ in
+                let disc = CGRect(origin: .zero, size: size)
+                background.setFill()
+                UIBezierPath(ovalIn: disc).fill()
+                UIColor.white.setStroke()
+                let ring = UIBezierPath(ovalIn: disc.insetBy(dx: 0.75, dy: 0.75))
+                ring.lineWidth = 1.5
+                ring.stroke()
+                let box = disc.insetBy(dx: size.width * 0.24, dy: size.height * 0.24)
+                let scale = min(box.width / logo.size.width, box.height / logo.size.height)
+                let fitted = CGSize(width: logo.size.width * scale, height: logo.size.height * scale)
+                logo.draw(in: CGRect(x: disc.midX - fitted.width / 2, y: disc.midY - fitted.height / 2,
+                                     width: fitted.width, height: fitted.height))
+            }
         }
 
         private func directionColor() -> NSExpression {
@@ -245,12 +336,31 @@ struct TransitMapView: UIViewRepresentable {
             if previous?.contextLines != scene.contextLines || previous == nil,
                let source = style.source(withIdentifier: Self.contextSource) as? MLNShapeSource {
                 var lines: [MLNPolylineFeature] = []
+                var colors: [NSExpression: NSExpression] = [:]
                 for (index, line) in scene.contextLines.enumerated() {
                     guard let route = parent.routes[line] else { continue }
-                    let attributes: [String: Any] = ["ci": index % linePaletteUIColors.count]
-                    lines += polylines(route.ida.shapes + route.vuelta.shapes, attributes: attributes)
+                    lines += polylines(route.ida.shapes + route.vuelta.shapes, attributes: ["linea": line])
+                    // Metro lines keep their brand colour; EMT lines take distinct
+                    // palette colours by position (not hash, which can collide).
+                    let color = parent.metroColors[line].map { UIColor(hex: $0) }
+                        ?? linePaletteUIColors[index % linePaletteUIColors.count]
+                    colors[NSExpression(forConstantValue: line)] = NSExpression(forConstantValue: color)
+                }
+                if let layer = style.layer(withIdentifier: Self.contextLayer) as? MLNLineStyleLayer {
+                    layer.lineColor = colors.isEmpty
+                        ? NSExpression(forConstantValue: idaColor)
+                        : NSExpression(forMLNMatchingKey: NSExpression(forKeyPath: "linea"), in: colors,
+                                       default: NSExpression(forConstantValue: idaColor))
                 }
                 source.shape = MLNShapeCollectionFeature(shapes: lines)
+            }
+            if previous?.placesKey != scene.placesKey, let source = style.source(withIdentifier: Self.placesSource) as? MLNShapeSource {
+                source.shape = MLNShapeCollectionFeature(shapes: scene.places.map { place in
+                    let feature = MLNPointFeature()
+                    feature.coordinate = CLLocationCoordinate2D(latitude: place.lat, longitude: place.lon)
+                    feature.attributes = ["id": place.id, "network": place.network.rawValue, "name": place.name]
+                    return feature
+                })
             }
         }
 
@@ -381,13 +491,23 @@ struct TransitMapView: UIViewRepresentable {
                 }
             }
 
-            let rect = CGRect(x: point.x - 14, y: point.y - 14, width: 28, height: 28)
-            let features = map.visibleFeatures(in: rect, styleLayerIdentifiers: [Self.stopsLayer, Self.clustersLayer])
+            let rect = CGRect(x: point.x - 15, y: point.y - 15, width: 30, height: 30)
+            let features = map.visibleFeatures(in: rect, styleLayerIdentifiers: [
+                Self.stopsLayer, Self.clustersLayer, Self.placesLayer, Self.placesClustersLayer,
+            ])
             if let cluster = features.first(where: { $0 is MLNPointFeatureCluster }) {
                 map.setCenter(cluster.coordinate, zoomLevel: map.zoomLevel + 2, animated: true)
                 return
             }
-            if let feature = features.first, let id = (feature.attribute(forKey: "id") as? NSNumber)?.intValue {
+            // The closest point wins, so a station isn't shadowed by a nearby stop.
+            let nearest = features.min { a, b in
+                let pa = map.convert(a.coordinate, toPointTo: map)
+                let pb = map.convert(b.coordinate, toPointTo: map)
+                return hypot(pa.x - point.x, pa.y - point.y) < hypot(pb.x - point.x, pb.y - point.y)
+            }
+            if let place = nearest?.attribute(forKey: "id") as? String {
+                parent.onSelectPlace(place)
+            } else if let id = (nearest?.attribute(forKey: "id") as? NSNumber)?.intValue {
                 parent.onSelectStop(id)
             }
         }

@@ -43,14 +43,23 @@ struct AlertsTab: View {
                     } else {
                         List(incidents, id: \.self) { incident in
                             VStack(alignment: .leading, spacing: 6) {
-                                Text(incident.title)
-                                    .font(.headline)
-                                    .fixedSize(horizontal: false, vertical: true)
+                                HStack(alignment: .top, spacing: 8) {
+                                    ServiceLogo(network: incident.network, size: 20)
+                                    Text(incident.title)
+                                        .font(.headline)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                                if !incident.detail.isEmpty {
+                                    Text(incident.detail).font(.subheadline).foregroundStyle(.secondary)
+                                }
                                 if !incident.date.isEmpty {
                                     Text(incident.date).font(.caption).foregroundStyle(.secondary)
                                 }
                                 if !incident.lines.isEmpty {
-                                    LineBadges(lines: incident.lines.sorted { $0.localizedStandardCompare($1) == .orderedAscending })
+                                    // Metro alerts carry bare line numbers; show them as Metro badges.
+                                    LineBadges(lines: incident.lines
+                                        .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+                                        .map { incident.network == .metro ? "M\($0)" : $0 })
                                 }
                             }
                             .padding(.vertical, 2)

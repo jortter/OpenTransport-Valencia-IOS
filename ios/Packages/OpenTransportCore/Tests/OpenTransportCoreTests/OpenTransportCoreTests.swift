@@ -94,6 +94,12 @@ final class OpenTransportCoreTests: XCTestCase {
         XCTAssertEqual(incidents[0].lines, ["19", "92"])
     }
 
+    func testMetroAssets() {
+        let metro = MetroAssets.load(from: assets)
+        XCTAssertEqual(metro.stationNames[20], "València Sud")
+        XCTAssertEqual(metro.lineColors["M1"], 0xFEC601)
+    }
+
     func testStrings() {
         XCTAssertEqual(Strings(.es).map, "Mapa")
         XCTAssertEqual(Strings(.va).saved, "Guardades")
