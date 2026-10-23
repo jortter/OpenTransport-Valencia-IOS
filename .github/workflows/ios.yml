@@ -47,7 +47,7 @@ jobs:
       - name: Simulator screenshots
         run: |
           set -x
-          mkdir -p screenshots
+          mkdir -p ci-shots
           UDID=$(xcrun simctl list devices available -j | python3 -c '
           import json, sys
           devices = [d for runtime, ds in json.load(sys.stdin)["devices"].items() if "iOS" in runtime for d in ds]
@@ -62,14 +62,14 @@ jobs:
             name=$1; shift
             xcrun simctl launch "$UDID" "$BUNDLE_ID" "$@"
             sleep 20
-            xcrun simctl io "$UDID" screenshot "screenshots/$name.png"
+            xcrun simctl io "$UDID" screenshot "ci-shots/$name.png"
             xcrun simctl terminate "$UDID" "$BUNDLE_ID" || true
           }
           shot 1-map -initialTab map
           shot 2-stop -initialTab map -demoStop 7
           shot 3-alerts -initialTab alerts
           shot 4-settings -initialTab settings -language es
-          xcrun simctl spawn "$UDID" log show --last 3m --predicate 'process == "OpenTransport"' --style compact > screenshots/app.log 2>&1 || true
+          xcrun simctl spawn "$UDID" log show --last 3m --predicate 'process == "OpenTransport"' --style compact > ci-shots/app.log 2>&1 || true
 
       - name: Build unsigned IPA
         run: |
@@ -92,7 +92,7 @@ jobs:
         if: always()
         with:
           name: screenshots
-          path: screenshots
+          path: ci-shots
 
       # Latest IPA as a pre-release, easy to open from the iPhone and install with SideStore.
       - name: Publish pre-release
@@ -110,8 +110,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          [ -d screenshots ] || exit 0
-          cd screenshots
+          [ -d ci-shots ] || exit 0
+          cd ci-shots
           printf '# Capturas del simulador\n\n%s @ %s\n' "$GITHUB_REF_NAME" "$GITHUB_SHA" > README.md
           for f in *.png; do printf '\n![%s](%s)\n' "$f" "$f" >> README.md; done
           git init -q -b ci-screenshots
