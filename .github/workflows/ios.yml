@@ -13,7 +13,8 @@ permissions:
 
 concurrency:
   group: ios-${{ github.ref }}
-  cancel-in-progress: true
+  # Queue instead of cancelling: every pushed step gets built and checked.
+  cancel-in-progress: false
 
 env:
   BUNDLE_ID: com.jortter.opentransport
