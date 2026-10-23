@@ -17,9 +17,11 @@ struct MapTab: View {
                     live: map.live,
                     dark: colorScheme == .dark,
                     cameraRequest: map.cameraRequest,
+                    followedBus: map.followedBus,
+                    follow3D: map.follow3D,
                     recenterRequest: recenterRequest,
                     onSelectStop: { map.selectStop($0) },
-                    onSelectBus: { _ in } // F3: follow the bus
+                    onSelectBus: { map.followBus($0) }
                 )
                 .ignoresSafeArea(edges: .top)
                 .overlay(alignment: .bottomTrailing) {
@@ -47,7 +49,7 @@ struct MapTab: View {
                 switch sheet {
                 case .stop(let id): StopSheet(stopId: id)
                 case .line(let line): LineSheet(line: line)
-                case .bus: EmptyView()
+                case .bus(let number): FollowSheet(number: number)
                 }
             }
             .presentationDetents([.medium, .large])

@@ -34,12 +34,16 @@ struct CameraRequest: Equatable {
 @MainActor
 @Observable
 final class MapModel {
+    /// Set by the methods below (and cleared by the sheet binding on dismiss).
     var sheet: MapSheet?
     private(set) var currentLine: String?
     private(set) var cameraRequest: CameraRequest?
+    /// Behind-the-bus 3D camera while following (Android's followPitch 58°).
+    var follow3D = false
     let live = LiveBuses()
 
     @ObservationIgnored private var transit: TransitData?
+    @ObservationIgnored private var lastPresented: MapSheet?
 
     func configure(transit: TransitData, client: EmtClient) {
         self.transit = transit
@@ -60,7 +64,7 @@ final class MapModel {
         guard let stop = transit?.stopsById[String(id)] else { return }
         currentLine = nil
         live.track(line: nil)
-        sheet = .stop(id)
+        present(.stop(id))
         move(.center(LonLat(lon: stop.lon, lat: stop.lat), zoom: 16.5))
     }
 
@@ -68,18 +72,35 @@ final class MapModel {
         guard let route = transit?.routes[line] else { return }
         if currentLine != line { live.track(line: line) }
         currentLine = line
-        sheet = .line(line)
+        present(.line(line))
         if let bounds = route.bounds { move(.fit(bounds)) }
+    }
+
+    /// Follows one live bus of the focused line; the camera tracks it.
+    func followBus(_ number: Int) {
+        guard live.buses.contains(where: { $0.number == number }) else { return }
+        present(.bus(number))
+    }
+
+    private func present(_ next: MapSheet) {
+        lastPresented = next
+        sheet = next
     }
 
     /// Called when the sheet goes away (swiped down or closed).
     func sheetDismissed() {
         guard sheet == nil else { return }
+        // Leaving a followed bus goes back to its line, as on Android.
+        if case .bus = lastPresented, let line = currentLine {
+            present(.line(line))
+            return
+        }
         currentLine = nil
         live.track(line: nil)
     }
 
     func close() {
+        lastPresented = nil
         sheet = nil
         sheetDismissed()
     }
