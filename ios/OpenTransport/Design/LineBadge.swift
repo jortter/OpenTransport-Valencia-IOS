@@ -1,10 +1,18 @@
 import SwiftUI
+import UIKit
 
-private let linePalette: [Color] = [
+/// LINE_PALETTE in EmtApp.kt.
+private let linePaletteHex = [
     0xF97316, 0x0EA5E9, 0xE11D48, 0x8B5CF6,
     0x14B8A6, 0xF43F5E, 0x6366F1, 0x22C55E,
     0xF59E0B, 0x06B6D4, 0xA855F7, 0x84CC16,
-].map { Color(hex: $0) }
+]
+private let linePalette: [Color] = linePaletteHex.map { Color(hex: $0) }
+/// Same palette for map layers; a selected stop's routes take colours by index.
+let linePaletteUIColors: [UIColor] = linePaletteHex.map { UIColor(hex: $0) }
+
+/// Colour the map gives the `index`-th line of a selected stop.
+func contextLineColor(_ index: Int) -> Color { linePalette[index % linePalette.count] }
 
 /// Same colour as Android's `stableLineColor`, which indexes by Java's `String.hashCode`.
 func stableLineColor(_ line: String) -> Color {

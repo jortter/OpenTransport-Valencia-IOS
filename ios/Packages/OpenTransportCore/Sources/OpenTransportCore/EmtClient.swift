@@ -17,7 +17,13 @@ public final class EmtClient: @unchecked Sendable {
     // MARK: - Live buses
 
     public func buses(line: String) async -> [BusFix] {
-        guard let raw = try? await request("/buses/linea.php", ["usuario": Self.user, "linea": line]) else { return [] }
+        (try? await fetchBuses(line: line)) ?? []
+    }
+
+    /// Like `buses(line:)` but throws on network errors, so a live view can keep
+    /// the last positions instead of wiping the map on a dropped request.
+    public func fetchBuses(line: String) async throws -> [BusFix] {
+        let raw = try await request("/buses/linea.php", ["usuario": Self.user, "linea": line])
         return Self.parseBuses(raw, line: line, routes: data.routes)
     }
 

@@ -33,7 +33,13 @@ struct StopSheet: View {
                         }
                     } else if let arrivals = info?.arrivals, !arrivals.isEmpty {
                         ForEach(Array(arrivals.enumerated()), id: \.offset) { _, arrival in
-                            ArrivalRow(arrival: arrival)
+                            // Tapping an arrival focuses its line, as on Android.
+                            Button {
+                                model.map.selectLine(arrival.line)
+                            } label: {
+                                ArrivalRow(arrival: arrival)
+                            }
+                            .tint(.primary)
                         }
                     } else {
                         Text(s.noBuses).foregroundStyle(.secondary)

@@ -11,11 +11,21 @@ final class AppModel {
     private(set) var client: EmtClient?
     private(set) var loadError: String?
     private(set) var favorites: [Int]
+    var tab: AppTab
+    let map = MapModel()
 
     private static let favoritesKey = "favorites"
 
     init() {
         favorites = (UserDefaults.standard.array(forKey: Self.favoritesKey) as? [Int]) ?? []
+        // `-initialTab settings` as a launch argument opens that tab (used by CI screenshots).
+        tab = AppTab(rawValue: UserDefaults.standard.string(forKey: "initialTab") ?? "") ?? .map
+    }
+
+    /// Switches to the map and opens a stop there (from Saved, search…).
+    func openStop(_ id: Int) {
+        tab = .map
+        map.selectStop(id)
     }
 
     /// Spanish/Valencian devices start in their language; everything else in English.
@@ -36,10 +46,23 @@ final class AppModel {
             let data = try await Task.detached(priority: .userInitiated) {
                 try TransitDataLoader.load(from: directory)
             }.value
+            let emt = EmtClient(data: data)
             transit = data
-            client = EmtClient(data: data)
+            client = emt
+            map.configure(transit: data, client: emt)
+            openDemoSelection()
         } catch {
             loadError = String(describing: error)
+        }
+    }
+
+    /// `-demoStop 7` / `-demoLine 19` launch arguments (used by CI screenshots).
+    private func openDemoSelection() {
+        let defaults = UserDefaults.standard
+        if let line = defaults.string(forKey: "demoLine") {
+            map.selectLine(line)
+        } else if defaults.integer(forKey: "demoStop") > 0 {
+            map.selectStop(defaults.integer(forKey: "demoStop"))
         }
     }
 

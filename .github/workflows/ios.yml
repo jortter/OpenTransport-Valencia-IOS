@@ -67,8 +67,9 @@ jobs:
           }
           shot 1-map -initialTab map
           shot 2-stop -initialTab map -demoStop 7
-          shot 3-alerts -initialTab alerts
-          shot 4-settings -initialTab settings -language es
+          shot 3-line -initialTab map -demoLine 19
+          shot 4-alerts -initialTab alerts
+          shot 5-settings -initialTab settings -language es
           xcrun simctl spawn "$UDID" log show --last 3m --predicate 'process == "OpenTransport"' --style compact > ci-shots/app.log 2>&1 || true
 
       - name: Build unsigned IPA

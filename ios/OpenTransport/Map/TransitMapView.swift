@@ -4,17 +4,43 @@ import CoreLocation
 import MapLibre
 import OpenTransportCore
 
-// Port (in progress) of NativeMap.kt. Same Carto styles as Android.
+// Port (in progress) of NativeMap.kt. Same Carto styles and layer scheme as Android.
 let styleDark = URL(string: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json")!
 let styleLight = URL(string: "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json")!
 let valenciaCenter = CLLocationCoordinate2D(latitude: 39.4699, longitude: -0.3763)
 
+let idaColor = UIColor(hex: 0x3B82F6)
+let vueltaColor = UIColor(hex: 0xEF4444)
+let emtRed = UIColor(red: 0.937, green: 0.267, blue: 0.267, alpha: 1)
+
+/// Everything the map draws, besides the buses (which animate on their own).
+struct MapScene: Equatable {
+    /// Cheap identity for `stops`, so the source is only rebuilt when it changes.
+    var stopsKey: String
+    var stops: [Stop]
+    /// Focused line: its ida/vuelta shapes are drawn in blue/red.
+    var mainLine: String?
+    /// Lines through the selected stop, each in its own palette colour.
+    var contextLines: [String]
+    /// The map is partly covered by a sheet: keep content in the visible part.
+    var sheetVisible: Bool
+
+    static func == (a: MapScene, b: MapScene) -> Bool {
+        a.stopsKey == b.stopsKey && a.mainLine == b.mainLine && a.contextLines == b.contextLines
+            && a.sheetVisible == b.sheetVisible
+    }
+}
+
 struct TransitMapView: UIViewRepresentable {
-    let stops: [Stop]
+    let scene: MapScene
+    let routes: [String: BusRoute]
+    let live: LiveBuses
     let dark: Bool
+    var cameraRequest: CameraRequest?
     /// Bumped by the "my location" button; each change recentres on the user.
     var recenterRequest: Int = 0
     var onSelectStop: (Int) -> Void
+    var onSelectBus: (Int) -> Void
 
     private var styleURL: URL { dark ? styleDark : styleLight }
 
@@ -24,6 +50,7 @@ struct TransitMapView: UIViewRepresentable {
         let map = MLNMapView(frame: .zero, styleURL: styleURL)
         map.delegate = context.coordinator
         map.setCenter(valenciaCenter, zoomLevel: 13, animated: false)
+        map.minimumZoomLevel = 8
         map.showsUserLocation = true
         map.allowsRotating = true
 
@@ -37,17 +64,34 @@ struct TransitMapView: UIViewRepresentable {
         map.addGestureRecognizer(tap)
         context.coordinator.loadedStyle = styleURL
         context.coordinator.lastRecenter = recenterRequest
+        context.coordinator.startAnimating(map)
         return map
     }
 
+    static func dismantleUIView(_ map: MLNMapView, coordinator: Coordinator) {
+        coordinator.stopAnimating()
+    }
+
     func updateUIView(_ map: MLNMapView, context: Context) {
-        context.coordinator.parent = self
-        if context.coordinator.loadedStyle != styleURL {
-            context.coordinator.loadedStyle = styleURL
+        let coordinator = context.coordinator
+        coordinator.parent = self
+        if coordinator.loadedStyle != styleURL {
+            coordinator.loadedStyle = styleURL
+            coordinator.resetStyleState()
             map.styleURL = styleURL // layers are re-added in didFinishLoading
         }
-        if context.coordinator.lastRecenter != recenterRequest {
-            context.coordinator.lastRecenter = recenterRequest
+        if coordinator.lastSheetVisible != scene.sheetVisible {
+            coordinator.lastSheetVisible = scene.sheetVisible
+            let bottom = scene.sheetVisible ? map.bounds.height * 0.45 : 0
+            map.setContentInset(UIEdgeInsets(top: 0, left: 0, bottom: bottom, right: 0), animated: true, completionHandler: nil)
+        }
+        coordinator.applyScene(on: map)
+        if let request = cameraRequest, request.id != coordinator.lastCamera {
+            coordinator.lastCamera = request.id
+            coordinator.apply(request, on: map)
+        }
+        if coordinator.lastRecenter != recenterRequest {
+            coordinator.lastRecenter = recenterRequest
             if let coordinate = map.userLocation?.location?.coordinate {
                 map.setCenter(coordinate, zoomLevel: max(map.zoomLevel, 16), direction: 0, animated: true)
             } else {
@@ -60,37 +104,74 @@ struct TransitMapView: UIViewRepresentable {
         var parent: TransitMapView
         var loadedStyle: URL?
         var lastRecenter = 0
+        var lastCamera: Int?
+        var lastSheetVisible = false
+
+        private weak var style: MLNStyle?
+        private var appliedScene: MapScene?
+        private var displayLink: CADisplayLink?
+        private var drewNoBuses = false
 
         static let stopsSource = "emt-stops"
         static let stopsLayer = "emt-stops"
         static let clustersLayer = "emt-stops-clusters"
         static let clusterCountLayer = "emt-stops-cluster-count"
+        static let contextSource = "emt-context"
+        static let mainSource = "emt-main"
+        static let busesSource = "emt-buses"
 
         init(_ parent: TransitMapView) {
             self.parent = parent
         }
 
-        func mapView(_ mapView: MLNMapView, didFinishLoading style: MLNStyle) {
-            addStops(to: style)
+        // MARK: Style
+
+        func resetStyleState() {
+            style = nil
+            appliedScene = nil
         }
 
-        private func addStops(to style: MLNStyle) {
-            let features: [MLNPointFeature] = parent.stops.filter { !$0.metro }.map { stop in
-                let feature = MLNPointFeature()
-                feature.coordinate = CLLocationCoordinate2D(latitude: stop.lat, longitude: stop.lon)
-                feature.attributes = ["id": stop.id, "name": stop.cleanName]
-                return feature
-            }
-            let source = MLNShapeSource(identifier: Self.stopsSource, features: features, options: [
+        func mapView(_ mapView: MLNMapView, didFinishLoading style: MLNStyle) {
+            self.style = style
+            appliedScene = nil
+            addLayers(to: style)
+            applyScene(on: mapView)
+        }
+
+        private func addLayers(to style: MLNStyle) {
+            // Route lines first so stops and buses draw on top of them.
+            let context = MLNShapeSource(identifier: Self.contextSource, shape: nil, options: nil)
+            style.addSource(context)
+            let contextLayer = MLNLineStyleLayer(identifier: "emt-context-routes", source: context)
+            contextLayer.lineColor = NSExpression(forMLNMatchingKey: NSExpression(forKeyPath: "ci"),
+                                                  in: Dictionary(uniqueKeysWithValues: linePaletteUIColors.enumerated().map {
+                                                      (NSExpression(forConstantValue: $0.offset), NSExpression(forConstantValue: $0.element))
+                                                  }),
+                                                  default: NSExpression(forConstantValue: idaColor))
+            contextLayer.lineWidth = NSExpression(forConstantValue: 4.2)
+            contextLayer.lineOpacity = NSExpression(forConstantValue: 0.9)
+            contextLayer.lineCap = NSExpression(forConstantValue: "round")
+            contextLayer.lineJoin = NSExpression(forConstantValue: "round")
+            style.addLayer(contextLayer)
+
+            let main = MLNShapeSource(identifier: Self.mainSource, shape: nil, options: nil)
+            style.addSource(main)
+            let mainLayer = MLNLineStyleLayer(identifier: "emt-main-routes", source: main)
+            mainLayer.lineColor = directionColor()
+            mainLayer.lineWidth = NSExpression(forConstantValue: 5)
+            mainLayer.lineOpacity = NSExpression(forConstantValue: 0.96)
+            mainLayer.lineCap = NSExpression(forConstantValue: "round")
+            mainLayer.lineJoin = NSExpression(forConstantValue: "round")
+            style.addLayer(mainLayer)
+
+            let stops = MLNShapeSource(identifier: Self.stopsSource, features: [], options: [
                 .clustered: true,
                 .clusterRadius: 45,
                 .maximumZoomLevelForClustering: 14,
             ])
-            style.addSource(source)
+            style.addSource(stops)
 
-            let emtRed = UIColor(red: 0.937, green: 0.267, blue: 0.267, alpha: 1)
-
-            let clusters = MLNCircleStyleLayer(identifier: Self.clustersLayer, source: source)
+            let clusters = MLNCircleStyleLayer(identifier: Self.clustersLayer, source: stops)
             clusters.predicate = NSPredicate(format: "cluster == YES")
             clusters.circleColor = NSExpression(forConstantValue: emtRed)
             clusters.circleRadius = NSExpression(forConstantValue: 15)
@@ -98,7 +179,7 @@ struct TransitMapView: UIViewRepresentable {
             clusters.circleStrokeWidth = NSExpression(forConstantValue: 2)
             style.addLayer(clusters)
 
-            let count = MLNSymbolStyleLayer(identifier: Self.clusterCountLayer, source: source)
+            let count = MLNSymbolStyleLayer(identifier: Self.clusterCountLayer, source: stops)
             count.predicate = NSPredicate(format: "cluster == YES")
             count.text = NSExpression(format: "CAST(point_count, 'NSString')")
             count.textColor = NSExpression(forConstantValue: UIColor.white)
@@ -106,18 +187,156 @@ struct TransitMapView: UIViewRepresentable {
             count.textAllowsOverlap = NSExpression(forConstantValue: true)
             style.addLayer(count)
 
-            let points = MLNCircleStyleLayer(identifier: Self.stopsLayer, source: source)
+            let points = MLNCircleStyleLayer(identifier: Self.stopsLayer, source: stops)
             points.predicate = NSPredicate(format: "cluster != YES")
             points.circleColor = NSExpression(forConstantValue: emtRed)
             points.circleRadius = NSExpression(forConstantValue: 6)
             points.circleStrokeColor = NSExpression(forConstantValue: UIColor.white)
             points.circleStrokeWidth = NSExpression(forConstantValue: 1.5)
             style.addLayer(points)
+
+            let buses = MLNShapeSource(identifier: Self.busesSource, shape: nil, options: nil)
+            style.addSource(buses)
+            let busDots = MLNCircleStyleLayer(identifier: "emt-buses", source: buses)
+            busDots.circleColor = directionColor()
+            busDots.circleRadius = NSExpression(forConstantValue: 12)
+            busDots.circleStrokeColor = NSExpression(forConstantValue: UIColor.black.withAlphaComponent(0.6))
+            busDots.circleStrokeWidth = NSExpression(forConstantValue: 2)
+            style.addLayer(busDots)
+            let busNumbers = MLNSymbolStyleLayer(identifier: "emt-bus-numbers", source: buses)
+            busNumbers.text = NSExpression(forKeyPath: "line")
+            busNumbers.textFontSize = NSExpression(forConstantValue: 11)
+            busNumbers.textColor = NSExpression(forConstantValue: UIColor.white)
+            busNumbers.textHaloColor = NSExpression(forConstantValue: UIColor.black.withAlphaComponent(0.6))
+            busNumbers.textHaloWidth = NSExpression(forConstantValue: 1.2)
+            busNumbers.textAllowsOverlap = NSExpression(forConstantValue: true)
+            busNumbers.textIgnoresPlacement = NSExpression(forConstantValue: true)
+            style.addLayer(busNumbers)
         }
+
+        private func directionColor() -> NSExpression {
+            NSExpression(forMLNMatchingKey: NSExpression(forKeyPath: "dir"),
+                         in: [NSExpression(forConstantValue: "vuelta"): NSExpression(forConstantValue: vueltaColor)],
+                         default: NSExpression(forConstantValue: idaColor))
+        }
+
+        // MARK: Scene
+
+        func applyScene(on map: MLNMapView) {
+            guard let style else { return }
+            let scene = parent.scene
+            let previous = appliedScene
+            appliedScene = scene
+
+            if previous?.stopsKey != scene.stopsKey, let source = style.source(withIdentifier: Self.stopsSource) as? MLNShapeSource {
+                source.shape = MLNShapeCollectionFeature(shapes: scene.stops.map { stop in
+                    let feature = MLNPointFeature()
+                    feature.coordinate = CLLocationCoordinate2D(latitude: stop.lat, longitude: stop.lon)
+                    feature.attributes = ["id": stop.id]
+                    return feature
+                })
+            }
+            if previous?.mainLine != scene.mainLine || previous == nil,
+               let source = style.source(withIdentifier: Self.mainSource) as? MLNShapeSource {
+                var lines: [MLNPolylineFeature] = []
+                if let line = scene.mainLine, let route = parent.routes[line] {
+                    lines += polylines(route.ida.shapes, attributes: ["dir": "ida"])
+                    lines += polylines(route.vuelta.shapes, attributes: ["dir": "vuelta"])
+                }
+                source.shape = MLNShapeCollectionFeature(shapes: lines)
+            }
+            if previous?.contextLines != scene.contextLines || previous == nil,
+               let source = style.source(withIdentifier: Self.contextSource) as? MLNShapeSource {
+                var lines: [MLNPolylineFeature] = []
+                for (index, line) in scene.contextLines.enumerated() {
+                    guard let route = parent.routes[line] else { continue }
+                    let attributes: [String: Any] = ["ci": index % linePaletteUIColors.count]
+                    lines += polylines(route.ida.shapes + route.vuelta.shapes, attributes: attributes)
+                }
+                source.shape = MLNShapeCollectionFeature(shapes: lines)
+            }
+        }
+
+        private func polylines(_ shapes: [[LonLat]], attributes: [String: Any]) -> [MLNPolylineFeature] {
+            shapes.compactMap { shape in
+                guard shape.count >= 2 else { return nil }
+                var coordinates = shape.map { CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lon) }
+                let feature = MLNPolylineFeature(coordinates: &coordinates, count: UInt(coordinates.count))
+                feature.attributes = attributes
+                return feature
+            }
+        }
+
+        // MARK: Camera
+
+        func apply(_ request: CameraRequest, on map: MLNMapView) {
+            switch request.kind {
+            case .center(let point, let zoom):
+                map.setCenter(CLLocationCoordinate2D(latitude: point.lat, longitude: point.lon),
+                              zoomLevel: zoom, direction: map.direction, animated: true)
+            case .fit(let bounds):
+                let coordinateBounds = MLNCoordinateBounds(
+                    sw: CLLocationCoordinate2D(latitude: bounds.south, longitude: bounds.west),
+                    ne: CLLocationCoordinate2D(latitude: bounds.north, longitude: bounds.east))
+                map.setVisibleCoordinateBounds(coordinateBounds, edgePadding: UIEdgeInsets(top: 60, left: 40, bottom: 40, right: 40),
+                                               animated: true, completionHandler: nil)
+            }
+        }
+
+        // MARK: Bus animation (30 fps, like the Android BusStore loop)
+
+        func startAnimating(_ map: MLNMapView) {
+            let link = CADisplayLink(target: WeakTarget(self), selector: #selector(WeakTarget.tick))
+            link.preferredFrameRateRange = CAFrameRateRange(minimum: 15, maximum: 30, preferred: 30)
+            link.add(to: .main, forMode: .common)
+            displayLink = link
+            self.map = map
+        }
+
+        func stopAnimating() {
+            displayLink?.invalidate()
+            displayLink = nil
+        }
+
+        private weak var map: MLNMapView?
+
+        @objc fileprivate func frame() {
+            guard let style, let source = style.source(withIdentifier: Self.busesSource) as? MLNShapeSource else { return }
+            guard let tracker = parent.live.tracker, !tracker.buses.isEmpty else {
+                if !drewNoBuses {
+                    source.shape = nil
+                    drewNoBuses = true
+                }
+                return
+            }
+            drewNoBuses = false
+            tracker.advance()
+            source.shape = MLNShapeCollectionFeature(shapes: tracker.buses.map { bus in
+                let feature = MLNPointFeature()
+                feature.coordinate = CLLocationCoordinate2D(latitude: bus.render.lat, longitude: bus.render.lon)
+                feature.attributes = ["line": bus.line, "dir": bus.direction ?? "", "num": bus.number]
+                return feature
+            })
+        }
+
+        // MARK: Taps
 
         @objc func handleTap(_ gesture: UITapGestureRecognizer) {
             guard gesture.state == .ended, let map = gesture.view as? MLNMapView else { return }
             let point = gesture.location(in: map)
+
+            // Buses first: they sit on top and are the smallest targets to miss.
+            if let tracker = parent.live.tracker {
+                let nearest = tracker.buses.map { bus -> (Int, CGFloat) in
+                    let p = map.convert(CLLocationCoordinate2D(latitude: bus.render.lat, longitude: bus.render.lon), toPointTo: map)
+                    return (bus.number, hypot(p.x - point.x, p.y - point.y))
+                }.min { $0.1 < $1.1 }
+                if let nearest, nearest.1 <= 36 {
+                    parent.onSelectBus(nearest.0)
+                    return
+                }
+            }
+
             let rect = CGRect(x: point.x - 14, y: point.y - 14, width: 28, height: 28)
             let features = map.visibleFeatures(in: rect, styleLayerIdentifiers: [Self.stopsLayer, Self.clustersLayer])
             if let cluster = features.first(where: { $0 is MLNPointFeatureCluster }) {
@@ -133,5 +352,25 @@ struct TransitMapView: UIViewRepresentable {
                                shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
             true
         }
+    }
+}
+
+/// Breaks the CADisplayLink → target retain cycle.
+private final class WeakTarget: NSObject {
+    weak var coordinator: TransitMapView.Coordinator?
+
+    init(_ coordinator: TransitMapView.Coordinator) {
+        self.coordinator = coordinator
+    }
+
+    @objc func tick() {
+        coordinator?.frame()
+    }
+}
+
+extension UIColor {
+    convenience init(hex: Int) {
+        self.init(red: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255,
+                  blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
     }
 }
