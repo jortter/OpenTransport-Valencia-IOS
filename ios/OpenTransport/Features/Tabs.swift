@@ -4,7 +4,6 @@ import OpenTransportCore
 struct SavedTab: View {
     @Environment(AppModel.self) private var model
     @Environment(\.strings) private var s
-    @State private var selected: SelectedStop?
 
     var body: some View {
         NavigationStack {
@@ -15,7 +14,7 @@ struct SavedTab: View {
                 } else {
                     List(stops) { stop in
                         Button {
-                            selected = SelectedStop(id: stop.id)
+                            model.openStop(stop.id)
                         } label: {
                             VStack(alignment: .leading, spacing: 6) {
                                 Text(stop.cleanName).foregroundStyle(.primary)
@@ -26,9 +25,6 @@ struct SavedTab: View {
                 }
             }
             .navigationTitle(s.saved)
-        }
-        .sheet(item: $selected) { stop in
-            StopSheet(stopId: stop.id).presentationDetents([.medium, .large])
         }
     }
 }

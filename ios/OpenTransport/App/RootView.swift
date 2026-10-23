@@ -6,12 +6,12 @@ enum AppTab: String, Hashable {
 }
 
 struct RootView: View {
+    @Environment(AppModel.self) private var model
     @Environment(\.strings) private var s
-    // `-initialTab settings` as a launch argument opens that tab (used by CI screenshots).
-    @State private var tab = AppTab(rawValue: UserDefaults.standard.string(forKey: "initialTab") ?? "") ?? .map
 
     var body: some View {
-        TabView(selection: $tab) {
+        @Bindable var model = model
+        TabView(selection: $model.tab) {
             MapTab()
                 .tabItem { Label(s.map, systemImage: "map") }
                 .tag(AppTab.map)

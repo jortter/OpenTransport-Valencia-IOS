@@ -1,23 +1,26 @@
 import SwiftUI
 import OpenTransportCore
 
-struct SelectedStop: Identifiable, Hashable {
-    let id: Int
-}
-
 struct MapTab: View {
     @Environment(AppModel.self) private var model
     @Environment(\.strings) private var s
     @Environment(\.colorScheme) private var colorScheme
-    @State private var selected: SelectedStop?
     @State private var recenterRequest = 0
 
     var body: some View {
+        @Bindable var map = model.map
         ZStack {
             if let transit = model.transit {
-                TransitMapView(stops: transit.stops, dark: colorScheme == .dark, recenterRequest: recenterRequest) { id in
-                    selected = SelectedStop(id: id)
-                }
+                TransitMapView(
+                    scene: scene(transit),
+                    routes: transit.routes,
+                    live: map.live,
+                    dark: colorScheme == .dark,
+                    cameraRequest: map.cameraRequest,
+                    recenterRequest: recenterRequest,
+                    onSelectStop: { map.selectStop($0) },
+                    onSelectBus: { _ in } // F3: follow the bus
+                )
                 .ignoresSafeArea(edges: .top)
                 .overlay(alignment: .bottomTrailing) {
                     Button {
@@ -39,17 +42,35 @@ struct MapTab: View {
                 ProgressView(s.loading)
             }
         }
-        .sheet(item: $selected) { stop in
-            StopSheet(stopId: stop.id)
-                .presentationDetents([.medium, .large])
-                .presentationBackgroundInteraction(.enabled(upThrough: .medium))
-        }
-        .task(id: model.transit == nil) {
-            // `-demoStop 7` as a launch argument opens that stop (used by CI screenshots).
-            let demo = UserDefaults.standard.integer(forKey: "demoStop")
-            if model.transit != nil, demo > 0, selected == nil {
-                selected = SelectedStop(id: demo)
+        .sheet(item: $map.sheet, onDismiss: { map.sheetDismissed() }) { sheet in
+            Group {
+                switch sheet {
+                case .stop(let id): StopSheet(stopId: id)
+                case .line(let line): LineSheet(line: line)
+                case .bus: EmptyView()
+                }
             }
+            .presentationDetents([.medium, .large])
+            .presentationBackgroundInteraction(.enabled(upThrough: .medium))
         }
+    }
+
+    /// Which stops and routes the map shows, mirroring `visibleStops` and
+    /// `contextLines` in EmtApp.kt: a focused line shows only its stops, a
+    /// selected stop only itself plus the routes of its lines.
+    private func scene(_ transit: TransitData) -> MapScene {
+        let map = model.map
+        if let line = map.currentLine {
+            return MapScene(stopsKey: "line:\(line)",
+                            stops: transit.stops.filter { !$0.metro && $0.lines.contains(line) },
+                            mainLine: line, contextLines: [], sheetVisible: map.sheet != nil)
+        }
+        if let id = map.selectedStopId, let stop = transit.stopsById[String(id)] {
+            return MapScene(stopsKey: "stop:\(id)", stops: [stop], mainLine: nil,
+                            contextLines: stop.lines.reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } },
+                            sheetVisible: true)
+        }
+        return MapScene(stopsKey: "all", stops: transit.stops.filter { !$0.metro }, mainLine: nil,
+                        contextLines: [], sheetVisible: map.sheet != nil)
     }
 }
