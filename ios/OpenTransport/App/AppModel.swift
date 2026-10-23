@@ -23,6 +23,12 @@ final class AppModel {
     let location = LocationModel()
     let metro = MetroClient()
     let valenbisi = ValenbisiClient()
+    let metrobus = MetrobusClient()
+    private(set) var rodalies: RodaliesData?
+    /// Route shapes beyond EMT/Metro: Rodalies, and Metrobús lines once loaded.
+    private(set) var extraRoutes: [String: BusRoute] = [:]
+    private(set) var extraColors: [String: Int] = [:]
+    @ObservationIgnored private var metrobusTask: Task<Void, Never>?
     @ObservationIgnored private var bikesTask: Task<Void, Never>?
 
     private static let favoritesKey = "favorites"
@@ -61,6 +67,11 @@ final class AppModel {
             transit = data
             client = emt
             metroAssets = await Task.detached { MetroAssets.load(from: directory) }.value
+            let rodaliesData = await Task.detached { RodaliesData.load(from: directory) }.value
+            rodalies = rodaliesData
+            extraRoutes.merge(rodaliesData.routes) { _, new in new }
+            for line in rodaliesData.routes.keys { extraColors[line] = 0xE30613 }
+            replacePlaces(of: .rodalies, with: rodaliesData.places)
             map.configure(transit: data, client: emt)
             location.start()
             openDemoSelection()
@@ -97,7 +108,7 @@ final class AppModel {
     private func openDemoPlace() {
         guard map.sheet == nil else { return }
         if let id = UserDefaults.standard.string(forKey: "demoPlace"), let place = places.first(where: { $0.id == id }) {
-            map.selectPlace(place)
+            select(place)
         }
     }
 
@@ -113,11 +124,61 @@ final class AppModel {
 
     func place(_ id: String) -> Place? { places.first { $0.id == id } }
 
+    /// Every route the map can draw.
+    var mapRoutes: [String: BusRoute] {
+        (transit?.routes ?? [:]).merging(extraRoutes) { _, extra in extra }
+    }
+
+    /// Brand colours for Metro, Rodalies and loaded Metrobús lines.
+    var lineColors: [String: Int] {
+        metroAssets.lineColors.merging(extraColors) { _, extra in extra }
+    }
+
+    /// Opens a place; a Metrobús stop then fetches its lines and their shapes
+    /// (Android does the same when one is selected).
+    func select(_ place: Place) {
+        map.selectPlace(place)
+        guard place.network == .metrobus else { return }
+        let code = String(place.id.dropFirst(3))
+        Task {
+            var lines: [String] = []
+            for arrival in await metrobus.arrivals(code: code) where arrival.line.hasPrefix("MB") && !lines.contains(arrival.line) {
+                lines.append(arrival.line)
+            }
+            for route in await metrobus.routes(for: lines) {
+                extraRoutes[route.line] = BusRoute(ida: RouteDirection(shapes: route.shapes, stops: []),
+                                                   vuelta: RouteDirection(shapes: [], stops: []))
+                extraColors[route.line] = route.color
+            }
+            guard map.selectedPlace?.id == place.id else { return }
+            var withLines = place
+            withLines.lines = lines
+            map.refreshSelectedPlace(withLines)
+        }
+    }
+
+    /// Metrobús has no bulk stop list: load it around the user (or the city
+    /// centre) and refresh every 5 minutes, like Android.
+    private func startMetrobus() {
+        metrobusTask = Task { [weak self] in
+            // Give the first location fix a moment before the first load.
+            try? await Task.sleep(for: .seconds(3))
+            while !Task.isCancelled {
+                guard let self else { return }
+                let anchor = self.location.location ?? LonLat(lon: -0.3763, lat: 39.4699)
+                self.replacePlaces(of: .metrobus, with: await self.metrobus.stops(lat: anchor.lat, lon: anchor.lon))
+                try? await Task.sleep(for: .seconds(5 * 60))
+            }
+        }
+    }
+
     func refreshIncidents(force: Bool = false) async {
         guard let client else { return }
         async let emt = client.incidents(force: force)
         async let fgv = metro.incidents(locale: fgvLocale, stationNames: metroAssets.stationNames)
-        incidents = await emt + fgv
+        async let metrobusAlerts = metrobus.incidents()
+        async let rodaliesAlerts = RodaliesAlerts.fetch()
+        incidents = await emt + fgv + metrobusAlerts + rodaliesAlerts
     }
 
     /// FGV translations are keyed ES / EN / VA (English as fallback).

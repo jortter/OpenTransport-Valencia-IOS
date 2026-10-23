@@ -18,7 +18,9 @@ struct PlaceSheet: View {
                 switch place.network {
                 case .metro: MetroArrivals(place: place)
                 case .valenbisi: BikeStation(place: place)
-                default: EmptyView()
+                case .metrobus: MetrobusArrivals(place: place)
+                case .rodalies: RodaliesDepartures(place: place)
+                case .emt: EmptyView()
                 }
                 updatesSection
             }
@@ -224,5 +226,129 @@ private struct StatCard: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(color.opacity(0.14), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+}
+
+/// Metrobús: live next bus (and occupancy) per line, plus the day's timetable.
+private struct MetrobusArrivals: View {
+    let place: Place
+
+    @Environment(AppModel.self) private var model
+    @Environment(\.strings) private var s
+    @State private var times: [Arrival]?
+    @State private var schedule: [MetrobusTime] = []
+    @State private var showSchedule = false
+
+    private var code: String { String(place.id.dropFirst(3)) }
+
+    var body: some View {
+        Section(s.nextDepartures) {
+            if let times {
+                if times.isEmpty {
+                    Text(s.noUpcomingBuses).foregroundStyle(.secondary)
+                } else {
+                    ForEach(Array(times.enumerated()), id: \.offset) { _, arrival in
+                        HStack(spacing: 12) {
+                            LineBadge(line: arrival.line)
+                            Text(arrival.destination.isEmpty ? "—" : arrival.destination).lineLimit(1)
+                            Spacer()
+                            Text(arrival.minutes)
+                                .font(.subheadline.weight(.semibold))
+                                .monospacedDigit()
+                                .foregroundStyle(Color.accentColor)
+                        }
+                    }
+                }
+                if !schedule.isEmpty {
+                    Button {
+                        showSchedule = true
+                    } label: {
+                        Label(s.timetable, systemImage: "clock")
+                    }
+                }
+            } else {
+                HStack {
+                    Spacer()
+                    ProgressView()
+                    Spacer()
+                }
+            }
+        }
+        .sheet(isPresented: $showSchedule) {
+            MetrobusTimetable(schedule: schedule)
+                .presentationDetents([.medium, .large])
+        }
+        .task(id: place.id) {
+            var loadedSchedule = false
+            while !Task.isCancelled {
+                let fresh = await model.metrobus.arrivals(code: code)
+                if !Task.isCancelled { times = fresh }
+                if !loadedSchedule {
+                    loadedSchedule = true
+                    schedule = await model.metrobus.schedule(code: code)
+                }
+                try? await Task.sleep(for: .seconds(30))
+            }
+        }
+    }
+}
+
+private struct MetrobusTimetable: View {
+    let schedule: [MetrobusTime]
+
+    @Environment(\.strings) private var s
+
+    var body: some View {
+        let hours = Dictionary(grouping: schedule, by: \.hour).sorted { $0.key < $1.key }
+        NavigationStack {
+            List(hours, id: \.key) { item in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(String(format: "%02d:00", item.key)).font(.headline).monospacedDigit()
+                    Text(item.value.map { String(format: "%02d %@", $0.minute, String($0.line.dropFirst(2))) }.joined(separator: "   "))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+            }
+            .navigationTitle(s.timetable)
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+}
+
+/// Rodalies: departures in the next 3 hours from the bundled timetable.
+private struct RodaliesDepartures: View {
+    let place: Place
+
+    @Environment(AppModel.self) private var model
+    @Environment(\.strings) private var s
+    @State private var now = Date()
+
+    var body: some View {
+        let times = model.rodalies?.times(at: place.name, now: now) ?? []
+        Section(s.nextDepartures) {
+            if times.isEmpty {
+                Text(s.noTrains).foregroundStyle(.secondary)
+            } else {
+                ForEach(Array(times.enumerated()), id: \.offset) { _, arrival in
+                    HStack(spacing: 12) {
+                        LineBadge(line: arrival.line)
+                        Text(arrival.destination.isEmpty ? "—" : arrival.destination).lineLimit(1)
+                        Spacer()
+                        Text(arrival.minutes)
+                            .font(.body.weight(.semibold))
+                            .monospacedDigit()
+                            .foregroundStyle(Color.accentColor)
+                    }
+                }
+            }
+        }
+        // Re-evaluated every minute so the countdowns stay current.
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(60))
+                now = Date()
+            }
+        }
     }
 }
