@@ -32,9 +32,9 @@ struct SavedTab: View {
 struct AlertsTab: View {
     @Environment(AppModel.self) private var model
     @Environment(\.strings) private var s
-    @State private var incidents: [Incident]?
 
     var body: some View {
+        let incidents = model.incidents
         NavigationStack {
             Group {
                 if let incidents {
@@ -61,11 +61,7 @@ struct AlertsTab: View {
                 }
             }
             .navigationTitle(s.serviceUpdates)
-            .refreshable { incidents = await model.client?.incidents(force: true) }
-        }
-        .task(id: model.client == nil) {
-            guard let client = model.client else { return }
-            incidents = await client.incidents()
+            .refreshable { await model.refreshIncidents(force: true) }
         }
     }
 }

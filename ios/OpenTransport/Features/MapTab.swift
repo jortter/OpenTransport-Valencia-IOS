@@ -6,6 +6,7 @@ struct MapTab: View {
     @Environment(\.strings) private var s
     @Environment(\.colorScheme) private var colorScheme
     @State private var recenterRequest = 0
+    @State private var showSearch = false
 
     var body: some View {
         @Bindable var map = model.map
@@ -24,6 +25,7 @@ struct MapTab: View {
                     onSelectBus: { map.followBus($0) }
                 )
                 .ignoresSafeArea(edges: .top)
+                .overlay(alignment: .top) { searchButton }
                 .overlay(alignment: .bottomTrailing) {
                     Button {
                         recenterRequest += 1
@@ -54,6 +56,50 @@ struct MapTab: View {
             }
             .presentationDetents([.medium, .large])
             .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+        }
+        .fullScreenCover(isPresented: $showSearch) {
+            SearchView(
+                onPickStop: { id in pick { map.selectStop(id) } },
+                onPickLine: { line in pick { map.selectLine(line) } }
+            )
+        }
+    }
+
+    private var searchButton: some View {
+        Button {
+            // Only one presentation at a time: close the open sheet first.
+            if model.map.sheet != nil {
+                model.map.close()
+                Task {
+                    try? await Task.sleep(for: .milliseconds(450))
+                    showSearch = true
+                }
+            } else {
+                showSearch = true
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                Text(s.searchStop)
+                Spacer()
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 16)
+            .frame(height: 48)
+            .background(.regularMaterial, in: Capsule())
+            .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+    }
+
+    /// Dismisses the search, then selects once the cover has gone (presenting
+    /// the sheet while the cover is still animating out would be dropped).
+    private func pick(_ select: @escaping () -> Void) {
+        showSearch = false
+        Task {
+            try? await Task.sleep(for: .milliseconds(450))
+            select()
         }
     }
 

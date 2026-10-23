@@ -12,7 +12,10 @@ final class AppModel {
     private(set) var loadError: String?
     private(set) var favorites: [Int]
     var tab: AppTab
+    /// Service alerts of every network (EMT for now), shown in Alerts and in stop sheets.
+    private(set) var incidents: [Incident]?
     let map = MapModel()
+    let location = LocationModel()
 
     private static let favoritesKey = "favorites"
 
@@ -50,7 +53,9 @@ final class AppModel {
             transit = data
             client = emt
             map.configure(transit: data, client: emt)
+            location.start()
             openDemoSelection()
+            await refreshIncidents()
         } catch {
             loadError = String(describing: error)
         }
@@ -64,6 +69,22 @@ final class AppModel {
         } else if defaults.integer(forKey: "demoStop") > 0 {
             map.selectStop(defaults.integer(forKey: "demoStop"))
         }
+    }
+
+    func refreshIncidents(force: Bool = false) async {
+        guard let client else { return }
+        incidents = await client.incidents(force: force)
+    }
+
+    /// Alerts that mention any of `lines` (one per line, like the Android stop sheet).
+    func incidents(for lines: [String]) -> [Incident] {
+        var result: [Incident] = []
+        for line in lines {
+            if let match = incidents?.first(where: { $0.lines.contains(line.uppercased()) }), !result.contains(match) {
+                result.append(match)
+            }
+        }
+        return result
     }
 
     func isFavorite(_ id: Int) -> Bool { favorites.contains(id) }

@@ -26,18 +26,3 @@ extension Color {
         self.init(red: Double((hex >> 16) & 0xFF) / 255, green: Double((hex >> 8) & 0xFF) / 255, blue: Double(hex & 0xFF) / 255)
     }
 }
-
-struct LineBadge: View {
-    let line: String
-
-    var body: some View {
-        Text(line)
-            .font(.caption.weight(.bold))
-            .monospacedDigit()
-            .foregroundStyle(.white)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 3)
-            .frame(minWidth: 32)
-            .background(stableLineColor(line), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-    }
-}
