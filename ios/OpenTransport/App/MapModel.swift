@@ -26,6 +26,10 @@ struct CameraRequest: Equatable {
     enum Kind: Equatable {
         case center(LonLat, zoom: Double)
         case fit(LngLatBounds)
+        /// Tilt for the 3D perspective (0 = flat).
+        case pitch(Double)
+        /// North up and flat, framing `bounds` when given (Android's resetView).
+        case reset(LngLatBounds?)
     }
 
     let id: Int
@@ -42,6 +46,8 @@ final class MapModel {
     private(set) var cameraRequest: CameraRequest?
     /// Behind-the-bus 3D camera while following (Android's followPitch 58°).
     var follow3D = false
+    /// 3D perspective of the free map (Android's tilt button, 55°).
+    private(set) var tilted = false
     let live = LiveBuses()
 
     @ObservationIgnored private var transit: TransitData?
@@ -124,6 +130,16 @@ final class MapModel {
         lastPresented = nil
         sheet = nil
         sheetDismissed()
+    }
+
+    func toggleTilt() {
+        tilted.toggle()
+        move(.pitch(tilted ? 55 : 0))
+    }
+
+    func resetView() {
+        tilted = false
+        move(.reset(currentLine.flatMap { transit?.routes[$0]?.bounds }))
     }
 
     func move(_ kind: CameraRequest.Kind) {

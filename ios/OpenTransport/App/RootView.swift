@@ -20,6 +20,7 @@ struct RootView: View {
                 .tag(AppTab.saved)
             AlertsTab()
                 .tabItem { Label(s.alerts, systemImage: "exclamationmark.triangle") }
+                .badge(model.incidents?.count ?? 0)
                 .tag(AppTab.alerts)
             PlanTab()
                 .tabItem { Label(s.plan, systemImage: "point.topleft.down.to.point.bottomright.curvepath") }
