@@ -44,6 +44,7 @@ struct SelectStopIntent: WidgetConfigurationIntent {
 struct RefreshStopIntent: AppIntent {
     static var title: LocalizedStringResource = "Refresh"
 
+    @MainActor
     func perform() async throws -> some IntentResult {
         WidgetCenter.shared.reloadTimelines(ofKind: StopWidget.kind)
         return .result()
