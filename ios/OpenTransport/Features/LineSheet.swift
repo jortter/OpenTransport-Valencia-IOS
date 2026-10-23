@@ -21,12 +21,8 @@ struct LineSheet: View {
                 Section {
                     HStack(spacing: 12) {
                         LineBadge(line: line)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(s.lineTitle(line)).font(.headline)
-                            Text("\(s.liveBuses(buses.count)) · \(s.directionLabel(direction))")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
+                        Text("\(s.liveBuses(buses.count)) · \(s.directionLabel(direction))")
+                            .foregroundStyle(.secondary)
                     }
                 }
                 Section(s.stops) {
@@ -43,12 +39,13 @@ struct LineSheet: View {
                                 }
                                 Spacer()
                                 if let eta = etas[stop.id] {
-                                    Text("\(eta) min").foregroundStyle(.tint).monospacedDigit()
+                                    Text("\(eta) min").foregroundStyle(Color.accentColor).monospacedDigit()
                                 } else {
                                     Text("—").foregroundStyle(.secondary)
                                 }
                             }
                         }
+                        .tint(.primary)
                     }
                 }
             }

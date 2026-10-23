@@ -51,6 +51,7 @@ struct TransitMapView: UIViewRepresentable {
         map.delegate = context.coordinator
         map.setCenter(valenciaCenter, zoomLevel: 13, animated: false)
         map.minimumZoomLevel = 8
+        map.automaticallyAdjustsContentInset = false // the sheet inset is managed in applyLayout
         map.showsUserLocation = true
         map.allowsRotating = true
 
@@ -80,16 +81,8 @@ struct TransitMapView: UIViewRepresentable {
             coordinator.resetStyleState()
             map.styleURL = styleURL // layers are re-added in didFinishLoading
         }
-        if coordinator.lastSheetVisible != scene.sheetVisible {
-            coordinator.lastSheetVisible = scene.sheetVisible
-            let bottom = scene.sheetVisible ? map.bounds.height * 0.45 : 0
-            map.setContentInset(UIEdgeInsets(top: 0, left: 0, bottom: bottom, right: 0), animated: true, completionHandler: nil)
-        }
         coordinator.applyScene(on: map)
-        if let request = cameraRequest, request.id != coordinator.lastCamera {
-            coordinator.lastCamera = request.id
-            coordinator.apply(request, on: map)
-        }
+        coordinator.applyLayout(on: map)
         if coordinator.lastRecenter != recenterRequest {
             coordinator.lastRecenter = recenterRequest
             if let coordinate = map.userLocation?.location?.coordinate {
@@ -268,6 +261,28 @@ struct TransitMapView: UIViewRepresentable {
         }
 
         // MARK: Camera
+
+        /// Content inset for the sheet and pending camera moves. Both need the
+        /// view's real size, so they wait until it has been laid out (a fit on a
+        /// zero-sized view lands on a random zoom).
+        func applyLayout(on map: MLNMapView) {
+            guard map.bounds.height > 0 else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self, weak map] in
+                    if let self, let map { self.applyLayout(on: map) }
+                }
+                return
+            }
+            let sheetVisible = parent.scene.sheetVisible
+            if lastSheetVisible != sheetVisible {
+                lastSheetVisible = sheetVisible
+                let bottom = sheetVisible ? map.bounds.height * 0.45 : 0
+                map.setContentInset(UIEdgeInsets(top: 0, left: 0, bottom: bottom, right: 0), animated: false, completionHandler: nil)
+            }
+            if let request = parent.cameraRequest, request.id != lastCamera {
+                lastCamera = request.id
+                apply(request, on: map)
+            }
+        }
 
         func apply(_ request: CameraRequest, on map: MLNMapView) {
             switch request.kind {
