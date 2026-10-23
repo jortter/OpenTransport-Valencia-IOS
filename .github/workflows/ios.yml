@@ -1,0 +1,122 @@
+name: iOS
+
+on:
+  push:
+    paths:
+      - "ios/**"
+      - "app/src/main/assets/**"
+      - ".github/workflows/ios.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BUNDLE_ID: com.jortter.opentransport
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Xcode version
+        run: xcodebuild -version
+
+      - name: Core tests
+        run: swift test --package-path ios/Packages/OpenTransportCore
+
+      - name: Generate Xcode project
+        run: |
+          brew install xcodegen
+          cd ios && xcodegen generate
+
+      - name: Build for simulator
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project ios/OpenTransport.xcodeproj -scheme OpenTransport \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/sim CODE_SIGNING_ALLOWED=NO | xcbeautify
+
+      - name: Simulator screenshots
+        run: |
+          set -x
+          mkdir -p screenshots
+          UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          devices = [d for runtime, ds in json.load(sys.stdin)["devices"].items() if "iOS" in runtime for d in ds]
+          phones = [d for d in devices if d["name"].startswith("iPhone 16 Pro")] or [d for d in devices if d["name"].startswith("iPhone")]
+          print(phones[-1]["udid"])')
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl install "$UDID" build/sim/Build/Products/Debug-iphonesimulator/OpenTransport.app
+          xcrun simctl privacy "$UDID" grant location "$BUNDLE_ID" || true
+          xcrun simctl location "$UDID" set 39.4699,-0.3763 || true
+          shot() {
+            name=$1; shift
+            xcrun simctl launch "$UDID" "$BUNDLE_ID" "$@"
+            sleep 20
+            xcrun simctl io "$UDID" screenshot "screenshots/$name.png"
+            xcrun simctl terminate "$UDID" "$BUNDLE_ID" || true
+          }
+          shot 1-map -initialTab map
+          shot 2-stop -initialTab map -demoStop 7
+          shot 3-alerts -initialTab alerts
+          shot 4-settings -initialTab settings -language es
+          xcrun simctl spawn "$UDID" log show --last 3m --predicate 'process == "OpenTransport"' --style compact > screenshots/app.log 2>&1 || true
+
+      - name: Build unsigned IPA
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project ios/OpenTransport.xcodeproj -scheme OpenTransport -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' \
+            -derivedDataPath build/device \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" | xcbeautify
+          mkdir -p build/ipa/Payload
+          cp -R build/device/Build/Products/Release-iphoneos/OpenTransport.app build/ipa/Payload/
+          (cd build/ipa && zip -qry ../OpenTransport.ipa Payload)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenTransport-ipa
+          path: build/OpenTransport.ipa
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots
+          path: screenshots
+
+      # Latest IPA as a pre-release, easy to open from the iPhone and install with SideStore.
+      - name: Publish pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete ios-latest --yes --cleanup-tag || true
+          gh release create ios-latest build/OpenTransport.ipa \
+            --prerelease --target "$GITHUB_SHA" --title "iOS (último build)" \
+            --notes "Build sin firmar de ${GITHUB_REF_NAME} @ ${GITHUB_SHA::7}. Instálalo con SideStore."
+
+      # Screenshots on a separate branch so they can be reviewed without downloading artifacts.
+      - name: Push screenshots branch
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [ -d screenshots ] || exit 0
+          cd screenshots
+          printf '# Capturas del simulador\n\n%s @ %s\n' "$GITHUB_REF_NAME" "$GITHUB_SHA" > README.md
+          for f in *.png; do printf '\n![%s](%s)\n' "$f" "$f" >> README.md; done
+          git init -q -b ci-screenshots
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -qm "Screenshots for ${GITHUB_SHA::7}"
+          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" ci-screenshots

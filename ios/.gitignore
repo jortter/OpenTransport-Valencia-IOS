@@ -1,0 +1,6 @@
+OpenTransport.xcodeproj/
+OpenTransport/Info.plist
+build/
+.build/
+.swiftpm/
+Packages/OpenTransportCore/.build/
