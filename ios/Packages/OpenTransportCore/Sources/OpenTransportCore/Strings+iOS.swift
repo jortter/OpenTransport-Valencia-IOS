@@ -51,6 +51,25 @@ extension Strings {
              "En iPhone els avisos funcionen mentre l'app està oberta o en segon pla recent.")
     }
 
+    // Trip planner
+    public var planning: String { pick("Planificando…", "Planning…", "Planificant…") }
+    public var direct: String { pick("directo", "direct", "directe") }
+    public func transfers(_ count: Int) -> String {
+        count == 1 ? pick("1 transbordo", "1 transfer", "1 transbord") : pick("\(count) transbordos", "\(count) transfers", "\(count) transbords")
+    }
+    public func walkTotal(_ meters: Int) -> String { pick("a pie \(meters) m", "walk \(meters) m", "a peu \(meters) m") }
+    public func walkLeg(_ minutes: Int, _ meters: Int) -> String {
+        pick("A pie \(minutes) min · \(meters) m", "Walk \(minutes) min · \(meters) m", "A peu \(minutes) min · \(meters) m")
+    }
+    public func towards(_ name: String) -> String { pick("hacia \(name)", "towards \(name)", "cap a \(name)") }
+    public func rideLeg(board: String, stops: Int, minutes: Int) -> String {
+        pick("sube en \(board) · \(stops) paradas · \(minutes) min",
+             "board \(board) · \(stops) stops · ride \(minutes) min",
+             "puja a \(board) · \(stops) parades · \(minutes) min")
+    }
+    public var noRoutes: String { pick("No hay rutas con estas paradas", "No routes between these stops", "No hi ha rutes entre estes parades") }
+    public var beta: String { "BETA" }
+
     public func lineTitle(_ line: String) -> String { pick("Línea \(line)", "Line \(line)", "Línia \(line)") }
 
     public func liveBuses(_ count: Int) -> String {

@@ -233,18 +233,6 @@ struct ServiceFilter: View {
     }
 }
 
-struct PlanTab: View {
-    @Environment(\.strings) private var s
-
-    var body: some View {
-        NavigationStack {
-            ContentUnavailableView(s.planTitle, systemImage: "point.topleft.down.to.point.bottomright.curvepath",
-                                   description: Text(s.comingSoon))
-                .navigationTitle(s.plan)
-        }
-    }
-}
-
 struct SettingsTab: View {
     @Environment(\.strings) private var s
     @AppStorage("language") private var languageCode = AppModel.defaultLanguage.rawValue

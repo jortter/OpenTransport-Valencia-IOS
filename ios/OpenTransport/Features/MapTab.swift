@@ -48,6 +48,7 @@ struct MapTab: View {
                 case .bus(let number): FollowSheet(number: number)
                 case .place: if let place = map.selectedPlace { PlaceSheet(place: place) }
                 case .nearby: NearbySheet()
+                case .journey: if let journey = map.journey { JourneySheet(option: journey.option) }
                 }
             }
             .presentationDetents([.medium, .large])
@@ -145,6 +146,13 @@ struct MapTab: View {
     /// its stops, a selected stop or place only itself plus its lines' routes.
     private func scene(_ transit: TransitData) -> MapScene {
         let map = model.map
+        if let journey = map.journey {
+            // While a trip is shown, only its own stops stay on the map.
+            return MapScene(stopsKey: "journey:\(journey.id)",
+                            stops: transit.stops.filter { journey.stopIds.contains($0.id) },
+                            mainLine: nil, contextLines: [], sheetVisible: true,
+                            placesKey: "none", places: [], journey: journey)
+        }
         if let line = map.currentLine {
             return MapScene(stopsKey: "line:\(line)",
                             stops: transit.stops.filter { !$0.metro && $0.lines.contains(line) },
