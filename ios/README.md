@@ -22,13 +22,15 @@ runner macOS de GitHub Actions, que:
 
 1. Ejecuta los tests de `OpenTransportCore`.
 2. Compila la app para el simulador y hace capturas → rama `ci-screenshots`.
-3. Compila un `.ipa` sin firmar → pre-release `ios-latest`.
+3. Compila un `.ipa` sin firmar → rama `ios-build` (y pre-release `ios-latest`
+   cuando GitHub lo permite).
 
 ## Instalar en el iPhone con SideStore (gratis)
 
 1. Instala SideStore siguiendo <https://docs.sidestore.io> (solo la primera
    vez hace falta un ordenador; vale Windows o Linux).
-2. En el iPhone, abre la pre-release **ios-latest** del repositorio en GitHub
+2. En el iPhone, abre en Safari
+   <https://github.com/jortter/OpenTransport-Valencia-IOS/raw/ios-build/OpenTransport.ipa>
    y descarga `OpenTransport.ipa`.
 3. Ábrelo con SideStore (Compartir → SideStore, o desde *My Apps* → `+`).
 4. SideStore renueva la firma cada 7 días; actívale el refresco en segundo
