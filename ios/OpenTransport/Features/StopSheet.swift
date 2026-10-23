@@ -18,11 +18,7 @@ struct StopSheet: View {
             List {
                 if let stop {
                     Section {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 6) {
-                                ForEach(stop.lines, id: \.self) { LineBadge(line: $0) }
-                            }
-                        }
+                        LineBadges(lines: stop.lines)
                     } header: {
                         Text("\(s.stopCode) \(stop.id)")
                     }

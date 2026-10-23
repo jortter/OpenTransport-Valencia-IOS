@@ -10,14 +10,29 @@ struct MapTab: View {
     @Environment(\.strings) private var s
     @Environment(\.colorScheme) private var colorScheme
     @State private var selected: SelectedStop?
+    @State private var recenterRequest = 0
 
     var body: some View {
         ZStack {
             if let transit = model.transit {
-                TransitMapView(stops: transit.stops, dark: colorScheme == .dark) { id in
+                TransitMapView(stops: transit.stops, dark: colorScheme == .dark, recenterRequest: recenterRequest) { id in
                     selected = SelectedStop(id: id)
                 }
                 .ignoresSafeArea(edges: .top)
+                .overlay(alignment: .bottomTrailing) {
+                    Button {
+                        recenterRequest += 1
+                    } label: {
+                        Image(systemName: "location.fill")
+                            .font(.title3)
+                            .frame(width: 48, height: 48)
+                            .background(.regularMaterial, in: Circle())
+                            .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
+                    }
+                    .accessibilityLabel(s.myLocation)
+                    .padding(.trailing, 16)
+                    .padding(.bottom, 40) // clear of MapLibre's attribution button
+                }
             } else if let error = model.loadError {
                 ContentUnavailableView(error, systemImage: "exclamationmark.triangle")
             } else {

@@ -12,6 +12,8 @@ let valenciaCenter = CLLocationCoordinate2D(latitude: 39.4699, longitude: -0.376
 struct TransitMapView: UIViewRepresentable {
     let stops: [Stop]
     let dark: Bool
+    /// Bumped by the "my location" button; each change recentres on the user.
+    var recenterRequest: Int = 0
     var onSelectStop: (Int) -> Void
 
     private var styleURL: URL { dark ? styleDark : styleLight }
@@ -34,6 +36,7 @@ struct TransitMapView: UIViewRepresentable {
         }
         map.addGestureRecognizer(tap)
         context.coordinator.loadedStyle = styleURL
+        context.coordinator.lastRecenter = recenterRequest
         return map
     }
 
@@ -43,11 +46,20 @@ struct TransitMapView: UIViewRepresentable {
             context.coordinator.loadedStyle = styleURL
             map.styleURL = styleURL // layers are re-added in didFinishLoading
         }
+        if context.coordinator.lastRecenter != recenterRequest {
+            context.coordinator.lastRecenter = recenterRequest
+            if let coordinate = map.userLocation?.location?.coordinate {
+                map.setCenter(coordinate, zoomLevel: max(map.zoomLevel, 16), direction: 0, animated: true)
+            } else {
+                map.showsUserLocation = true // asks for permission again if needed
+            }
+        }
     }
 
     final class Coordinator: NSObject, MLNMapViewDelegate, UIGestureRecognizerDelegate {
         var parent: TransitMapView
         var loadedStyle: URL?
+        var lastRecenter = 0
 
         static let stopsSource = "emt-stops"
         static let stopsLayer = "emt-stops"
