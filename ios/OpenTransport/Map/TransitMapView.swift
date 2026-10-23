@@ -27,10 +27,12 @@ struct MapScene: Equatable {
     /// Points of the other networks, and a cheap identity for them.
     var placesKey: String = ""
     var places: [Place] = []
+    /// A planned trip: rides in their own colours, dashed walks, transfer dots.
+    var journey: PlannedJourney?
 
     static func == (a: MapScene, b: MapScene) -> Bool {
         a.stopsKey == b.stopsKey && a.mainLine == b.mainLine && a.contextLines == b.contextLines
-            && a.sheetVisible == b.sheetVisible && a.placesKey == b.placesKey
+            && a.sheetVisible == b.sheetVisible && a.placesKey == b.placesKey && a.journey == b.journey
     }
 }
 
@@ -129,6 +131,10 @@ struct TransitMapView: UIViewRepresentable {
         static let placesClustersLayer = "emt-places-clusters"
         static let contextLayer = "emt-context-routes"
         static let bikesLayer = "emt-vb-pills"
+        static let journeySource = "emt-journey"
+        static let journeyDotsSource = "emt-journey-stops"
+        /// JOURNEY_PALETTE in NativeMap.kt: one colour per ride of a trip.
+        static let journeyPalette = [0x2563EB, 0xDB2777, 0x16A34A, 0xF59E0B, 0x7C3AED, 0x0891B2].map { UIColor(hex: $0) }
 
         init(_ parent: TransitMapView) {
             self.parent = parent
@@ -203,6 +209,7 @@ struct TransitMapView: UIViewRepresentable {
             style.addLayer(points)
 
             addPlaceLayers(to: style)
+            addJourneyLayers(to: style)
 
             let buses = MLNShapeSource(identifier: Self.busesSource, shape: nil, options: nil)
             style.addSource(buses)
@@ -314,6 +321,41 @@ struct TransitMapView: UIViewRepresentable {
             }
         }
 
+        private func addJourneyLayers(to style: MLNStyle) {
+            let colors = NSExpression(forMLNMatchingKey: NSExpression(forKeyPath: "ci"),
+                                      in: Dictionary(uniqueKeysWithValues: Self.journeyPalette.enumerated().map {
+                                          (NSExpression(forConstantValue: $0.offset), NSExpression(forConstantValue: $0.element))
+                                      }),
+                                      default: NSExpression(forConstantValue: Self.journeyPalette[0]))
+            let source = MLNShapeSource(identifier: Self.journeySource, shape: nil, options: nil)
+            style.addSource(source)
+
+            let rides = MLNLineStyleLayer(identifier: "emt-journey-rides", source: source)
+            rides.predicate = NSPredicate(format: "walk == 0")
+            rides.lineColor = colors
+            rides.lineWidth = NSExpression(forConstantValue: 6)
+            rides.lineOpacity = NSExpression(forConstantValue: 0.95)
+            rides.lineCap = NSExpression(forConstantValue: "round")
+            rides.lineJoin = NSExpression(forConstantValue: "round")
+            style.addLayer(rides)
+
+            let walks = MLNLineStyleLayer(identifier: "emt-journey-walks", source: source)
+            walks.predicate = NSPredicate(format: "walk == 1")
+            walks.lineColor = NSExpression(forConstantValue: UIColor.systemGray)
+            walks.lineWidth = NSExpression(forConstantValue: 3.5)
+            walks.lineDashPattern = NSExpression(forConstantValue: [1.5, 1.5])
+            style.addLayer(walks)
+
+            let dots = MLNShapeSource(identifier: Self.journeyDotsSource, shape: nil, options: nil)
+            style.addSource(dots)
+            let dotLayer = MLNCircleStyleLayer(identifier: "emt-journey-dots", source: dots)
+            dotLayer.circleRadius = NSExpression(forConstantValue: 9)
+            dotLayer.circleColor = colors
+            dotLayer.circleStrokeColor = NSExpression(forConstantValue: UIColor.white)
+            dotLayer.circleStrokeWidth = NSExpression(forConstantValue: 2.5)
+            style.addLayer(dotLayer)
+        }
+
         static func iconName(_ network: Network) -> String { "\(network.rawValue.lowercased())-icon" }
 
         /// The network logo on its brand-coloured disc (Android's `serviceIcon`).
@@ -395,6 +437,21 @@ struct TransitMapView: UIViewRepresentable {
                                        default: NSExpression(forConstantValue: idaColor))
                 }
                 source.shape = MLNShapeCollectionFeature(shapes: lines)
+            }
+            if previous?.journey != scene.journey || previous == nil {
+                let segments = scene.journey?.segments ?? []
+                (style.source(withIdentifier: Self.journeySource) as? MLNShapeSource)?.shape =
+                    MLNShapeCollectionFeature(shapes: segments.flatMap { segment in
+                        polylines([segment.points], attributes: ["walk": segment.walk ? 1 : 0,
+                                                                 "ci": segment.colorIndex % Self.journeyPalette.count])
+                    })
+                (style.source(withIdentifier: Self.journeyDotsSource) as? MLNShapeSource)?.shape =
+                    MLNShapeCollectionFeature(shapes: (scene.journey?.dots ?? []).map { dot in
+                        let feature = MLNPointFeature()
+                        feature.coordinate = CLLocationCoordinate2D(latitude: dot.point.lat, longitude: dot.point.lon)
+                        feature.attributes = ["ci": dot.colorIndex % Self.journeyPalette.count]
+                        return feature
+                    })
             }
             if previous?.placesKey != scene.placesKey, let source = style.source(withIdentifier: Self.placesSource) as? MLNShapeSource {
                 source.shape = MLNShapeCollectionFeature(shapes: scene.places.map { place in

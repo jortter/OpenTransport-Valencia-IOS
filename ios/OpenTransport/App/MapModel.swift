@@ -10,6 +10,7 @@ enum MapSheet: Identifiable, Hashable {
     case bus(Int)
     case place(String)
     case nearby
+    case journey
 
     var id: String {
         switch self {
@@ -18,6 +19,7 @@ enum MapSheet: Identifiable, Hashable {
         case .bus(let number): return "bus-\(number)"
         case .place(let id): return "place-\(id)"
         case .nearby: return "nearby"
+        case .journey: return "journey"
         }
     }
 }
@@ -65,6 +67,9 @@ final class MapModel {
         return nil
     }
 
+    /// The trip chosen in Plan, drawn on the map with its own sheet.
+    private(set) var journey: PlannedJourney?
+
     /// The selected Metro/Valenbisi/… point (kept whole: places reload often).
     private(set) var selectedPlace: Place?
 
@@ -103,6 +108,14 @@ final class MapModel {
         if let bounds = route.bounds { move(.fit(bounds)) }
     }
 
+    func showJourney(_ planned: PlannedJourney) {
+        currentLine = nil
+        live.track(line: nil)
+        journey = planned
+        present(.journey)
+        if let bounds = planned.bounds { move(.fit(bounds)) }
+    }
+
     /// "Stops near me" (Android pops it on the first location fix and on the
     /// location button).
     func showNearby() {
@@ -119,6 +132,7 @@ final class MapModel {
 
     private func present(_ next: MapSheet) {
         if case .place = next {} else { selectedPlace = nil }
+        if case .journey = next {} else { journey = nil }
         lastPresented = next
         sheet = next
     }
@@ -133,6 +147,7 @@ final class MapModel {
         }
         currentLine = nil
         selectedPlace = nil
+        journey = nil
         live.track(line: nil)
     }
 

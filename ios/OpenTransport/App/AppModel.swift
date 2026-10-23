@@ -20,6 +20,8 @@ final class AppModel {
     private(set) var incidents: [Incident]?
     /// Points of the other networks (Metro stations so far).
     private(set) var places: [Place] = []
+    /// Trip planner over EMT and Metro itineraries (built once data is loaded).
+    @ObservationIgnored private(set) var planner: JourneyPlanner?
     /// Bumped on every places reload, so the map knows to redraw them.
     private(set) var placesVersion = 0
     private(set) var metroAssets = MetroAssets(stationNames: [:], lineColors: [:])
@@ -86,6 +88,11 @@ final class AppModel {
             for line in rodaliesData.routes.keys { extraColors[line] = 0xE30613 }
             replacePlaces(of: .rodalies, with: rodaliesData.places)
             map.configure(transit: data, client: emt)
+            planner = JourneyPlanner(
+                transit: data,
+                streetWalk: { a, b in await EmtClient.walkMetrics(a, b) },
+                nextBus: { stop, line in await emt.nextBus(stopId: stop, line: line) }
+            )
             location.start()
             alerts.start(model: self)
             openDemoSelection()
@@ -137,6 +144,7 @@ final class AppModel {
     }
 
     func place(_ id: String) -> Place? { places.first { $0.id == id } }
+
 
     /// Every route the map can draw.
     var mapRoutes: [String: BusRoute] {
