@@ -61,11 +61,15 @@ jobs:
           xcrun simctl location "$UDID" set 39.4699,-0.3763 || true
           shot() {
             name=$1; shift
-            xcrun simctl launch "$UDID" "$BUNDLE_ID" "$@"
+            xcrun simctl launch "$UDID" "$BUNDLE_ID" -onboarded YES "$@"
             sleep 20
             xcrun simctl io "$UDID" screenshot "ci-shots/$name.png"
             xcrun simctl terminate "$UDID" "$BUNDLE_ID" || true
           }
+          xcrun simctl launch "$UDID" "$BUNDLE_ID" -onboarded NO
+          sleep 8
+          xcrun simctl io "$UDID" screenshot "ci-shots/0-onboarding.png"
+          xcrun simctl terminate "$UDID" "$BUNDLE_ID" || true
           shot 1-map -initialTab map
           shot 2-stop -initialTab map -demoStop 7
           shot 3-line -initialTab map -demoLine 19
