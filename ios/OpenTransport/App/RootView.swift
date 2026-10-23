@@ -8,10 +8,19 @@ enum AppTab: String, Hashable {
 struct RootView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.strings) private var s
+    @AppStorage("onboarded") private var onboarded = false
 
     var body: some View {
+        if !onboarded {
+            Onboarding { onboarded = true }
+        } else {
+            tabs
+        }
+    }
+
+    private var tabs: some View {
         @Bindable var model = model
-        TabView(selection: $model.tab) {
+        return TabView(selection: $model.tab) {
             MapTab()
                 .tabItem { Label(s.map, systemImage: "map") }
                 .tag(AppTab.map)
