@@ -19,9 +19,7 @@ struct SavedTab: View {
                         } label: {
                             VStack(alignment: .leading, spacing: 6) {
                                 Text(stop.cleanName).foregroundStyle(.primary)
-                                HStack(spacing: 4) {
-                                    ForEach(stop.lines.prefix(8), id: \.self) { LineBadge(line: $0) }
-                                }
+                                LineBadges(lines: stop.lines)
                             }
                         }
                     }
@@ -49,14 +47,14 @@ struct AlertsTab: View {
                     } else {
                         List(incidents, id: \.self) { incident in
                             VStack(alignment: .leading, spacing: 6) {
-                                Text(incident.title).font(.headline)
+                                Text(incident.title)
+                                    .font(.headline)
+                                    .fixedSize(horizontal: false, vertical: true)
                                 if !incident.date.isEmpty {
                                     Text(incident.date).font(.caption).foregroundStyle(.secondary)
                                 }
                                 if !incident.lines.isEmpty {
-                                    HStack(spacing: 4) {
-                                        ForEach(incident.lines.sorted(), id: \.self) { LineBadge(line: $0) }
-                                    }
+                                    LineBadges(lines: incident.lines.sorted { $0.localizedStandardCompare($1) == .orderedAscending })
                                 }
                             }
                             .padding(.vertical, 2)
