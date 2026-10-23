@@ -12,10 +12,16 @@ final class AppModel {
     private(set) var loadError: String?
     private(set) var favorites: [Int]
     var tab: AppTab
-    /// Service alerts of every network (EMT for now), shown in Alerts and in stop sheets.
+    /// Service alerts of every network, shown in Alerts and in stop/place sheets.
     private(set) var incidents: [Incident]?
+    /// Points of the other networks (Metro stations so far).
+    private(set) var places: [Place] = []
+    /// Bumped on every places reload, so the map knows to redraw them.
+    private(set) var placesVersion = 0
+    private(set) var metroAssets = MetroAssets(stationNames: [:], lineColors: [:])
     let map = MapModel()
     let location = LocationModel()
+    let metro = MetroClient()
 
     private static let favoritesKey = "favorites"
 
@@ -52,10 +58,14 @@ final class AppModel {
             let emt = EmtClient(data: data)
             transit = data
             client = emt
+            metroAssets = await Task.detached { MetroAssets.load(from: directory) }.value
             map.configure(transit: data, client: emt)
             location.start()
             openDemoSelection()
+            async let metroStations = metro.stations()
             await refreshIncidents()
+            replacePlaces(of: .metro, with: await metroStations)
+            openDemoPlace()
         } catch {
             loadError = String(describing: error)
         }
@@ -71,16 +81,40 @@ final class AppModel {
         }
     }
 
-    func refreshIncidents(force: Bool = false) async {
-        guard let client else { return }
-        incidents = await client.incidents(force: force)
+    /// `-demoPlace mt-20` (used by CI screenshots).
+    private func openDemoPlace() {
+        if let id = UserDefaults.standard.string(forKey: "demoPlace"), let place = places.first(where: { $0.id == id }) {
+            map.selectPlace(place)
+        }
     }
 
-    /// Alerts that mention any of `lines` (one per line, like the Android stop sheet).
-    func incidents(for lines: [String]) -> [Incident] {
+    private func replacePlaces(of network: Network, with fresh: [Place]) {
+        guard !fresh.isEmpty else { return }
+        places = places.filter { $0.network != network } + fresh
+        placesVersion += 1
+    }
+
+    func place(_ id: String) -> Place? { places.first { $0.id == id } }
+
+    func refreshIncidents(force: Bool = false) async {
+        guard let client else { return }
+        async let emt = client.incidents(force: force)
+        async let fgv = metro.incidents(locale: fgvLocale, stationNames: metroAssets.stationNames)
+        incidents = await emt + fgv
+    }
+
+    /// FGV translations are keyed ES / EN / VA (English as fallback).
+    private var fgvLocale: String {
+        Language.of(UserDefaults.standard.string(forKey: "language") ?? Self.defaultLanguage.rawValue).rawValue
+    }
+
+    /// Alerts that mention any of `lines` of `network` (one per line, like the
+    /// Android sheets). Metro alerts use bare numbers ("3"), stations "M3".
+    func incidents(for lines: [String], network: Network = .emt) -> [Incident] {
         var result: [Incident] = []
         for line in lines {
-            if let match = incidents?.first(where: { $0.lines.contains(line.uppercased()) }), !result.contains(match) {
+            let key = network == .metro && line.hasPrefix("M") ? String(line.dropFirst()) : line.uppercased()
+            if let match = incidents?.first(where: { $0.network == network && $0.lines.contains(key) }), !result.contains(match) {
                 result.append(match)
             }
         }

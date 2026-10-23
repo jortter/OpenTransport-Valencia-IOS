@@ -6,6 +6,7 @@ import OpenTransportCore
 struct SearchView: View {
     var onPickStop: (Int) -> Void
     var onPickLine: (String) -> Void
+    var onPickPlace: (Place) -> Void
 
     @Environment(AppModel.self) private var model
     @Environment(\.strings) private var s
@@ -53,12 +54,20 @@ struct SearchView: View {
         .onAppear { focused = true }
     }
 
+    /// Metro (and later other networks') points by name, like Android's placeHits.
+    private var placeHits: [Place] {
+        let term = query.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !term.isEmpty else { return [] }
+        return Array(model.places.filter { $0.name.lowercased().contains(term) }.prefix(40))
+    }
+
     @ViewBuilder
     private var results: some View {
         let transit = model.transit
         let stops = transit.map { TransitSearch.stops($0.stops, query: query) } ?? []
         let lines = transit.map { TransitSearch.lines($0, query: query) } ?? []
-        let empty = byLine ? lines.isEmpty : stops.isEmpty
+        let places = placeHits
+        let empty = byLine ? lines.isEmpty : stops.isEmpty && places.isEmpty
 
         if empty {
             ContentUnavailableView(query.isEmpty ? s.typeToSearch : s.noMatches, systemImage: "magnifyingglass")
@@ -86,6 +95,23 @@ struct SearchView: View {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(stop.cleanName).lineLimit(1)
                                     Text("\(stop.id) · \(stop.lines.joined(separator: " · "))")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                            }
+                        }
+                        .tint(.primary)
+                    }
+                    ForEach(places) { place in
+                        Button {
+                            onPickPlace(place)
+                        } label: {
+                            HStack(spacing: 12) {
+                                ServiceLogo(network: place.network, size: 28)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(place.name).lineLimit(1)
+                                    Text(([place.network.label] + place.lines).joined(separator: " · "))
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                         .lineLimit(1)

@@ -8,12 +8,14 @@ enum MapSheet: Identifiable, Hashable {
     case stop(Int)
     case line(String)
     case bus(Int)
+    case place(String)
 
     var id: String {
         switch self {
         case .stop(let id): return "stop-\(id)"
         case .line(let line): return "line-\(line)"
         case .bus(let number): return "bus-\(number)"
+        case .place(let id): return "place-\(id)"
         }
     }
 }
@@ -55,6 +57,9 @@ final class MapModel {
         return nil
     }
 
+    /// The selected Metro/Valenbisi/… point (kept whole: places reload often).
+    private(set) var selectedPlace: Place?
+
     var followedBus: Int? {
         if case .bus(let number) = sheet { return number }
         return nil
@@ -66,6 +71,14 @@ final class MapModel {
         live.track(line: nil)
         present(.stop(id))
         move(.center(LonLat(lon: stop.lon, lat: stop.lat), zoom: 16.5))
+    }
+
+    func selectPlace(_ place: Place) {
+        currentLine = nil
+        live.track(line: nil)
+        selectedPlace = place
+        present(.place(place.id))
+        move(.center(LonLat(lon: place.lon, lat: place.lat), zoom: 16.5))
     }
 
     func selectLine(_ line: String) {
@@ -83,6 +96,7 @@ final class MapModel {
     }
 
     private func present(_ next: MapSheet) {
+        if case .place = next {} else { selectedPlace = nil }
         lastPresented = next
         sheet = next
     }
@@ -96,6 +110,7 @@ final class MapModel {
             return
         }
         currentLine = nil
+        selectedPlace = nil
         live.track(line: nil)
     }
 

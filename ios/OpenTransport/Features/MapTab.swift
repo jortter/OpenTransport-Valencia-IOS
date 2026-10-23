@@ -15,6 +15,7 @@ struct MapTab: View {
                 TransitMapView(
                     scene: scene(transit),
                     routes: transit.routes,
+                    metroColors: model.metroAssets.lineColors,
                     live: map.live,
                     dark: colorScheme == .dark,
                     cameraRequest: map.cameraRequest,
@@ -22,7 +23,8 @@ struct MapTab: View {
                     follow3D: map.follow3D,
                     recenterRequest: recenterRequest,
                     onSelectStop: { map.selectStop($0) },
-                    onSelectBus: { map.followBus($0) }
+                    onSelectBus: { map.followBus($0) },
+                    onSelectPlace: { id in if let place = model.place(id) { map.selectPlace(place) } }
                 )
                 .ignoresSafeArea(edges: .top)
                 .overlay(alignment: .top) { searchButton }
@@ -52,6 +54,7 @@ struct MapTab: View {
                 case .stop(let id): StopSheet(stopId: id)
                 case .line(let line): LineSheet(line: line)
                 case .bus(let number): FollowSheet(number: number)
+                case .place: if let place = map.selectedPlace { PlaceSheet(place: place) }
                 }
             }
             .presentationDetents([.medium, .large])
@@ -60,7 +63,8 @@ struct MapTab: View {
         .fullScreenCover(isPresented: $showSearch) {
             SearchView(
                 onPickStop: { id in pick { map.selectStop(id) } },
-                onPickLine: { line in pick { map.selectLine(line) } }
+                onPickLine: { line in pick { map.selectLine(line) } },
+                onPickPlace: { place in pick { map.selectPlace(place) } }
             )
         }
     }
@@ -103,22 +107,33 @@ struct MapTab: View {
         }
     }
 
-    /// Which stops and routes the map shows, mirroring `visibleStops` and
-    /// `contextLines` in EmtApp.kt: a focused line shows only its stops, a
-    /// selected stop only itself plus the routes of its lines.
+    /// Which stops, places and routes the map shows, mirroring `visibleStops`,
+    /// `places` and `contextLines` in EmtApp.kt: a focused line or bus shows only
+    /// its stops, a selected stop or place only itself plus its lines' routes.
     private func scene(_ transit: TransitData) -> MapScene {
         let map = model.map
         if let line = map.currentLine {
             return MapScene(stopsKey: "line:\(line)",
                             stops: transit.stops.filter { !$0.metro && $0.lines.contains(line) },
-                            mainLine: line, contextLines: [], sheetVisible: map.sheet != nil)
+                            mainLine: line, contextLines: [], sheetVisible: map.sheet != nil,
+                            placesKey: "none", places: [])
         }
         if let id = map.selectedStopId, let stop = transit.stopsById[String(id)] {
             return MapScene(stopsKey: "stop:\(id)", stops: [stop], mainLine: nil,
-                            contextLines: stop.lines.reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } },
-                            sheetVisible: true)
+                            contextLines: unique(stop.lines), sheetVisible: true,
+                            placesKey: "none", places: [])
+        }
+        if let place = map.selectedPlace {
+            return MapScene(stopsKey: "none", stops: [], mainLine: nil,
+                            contextLines: unique(place.lines), sheetVisible: true,
+                            placesKey: "place:\(place.id)", places: [place])
         }
         return MapScene(stopsKey: "all", stops: transit.stops.filter { !$0.metro }, mainLine: nil,
-                        contextLines: [], sheetVisible: map.sheet != nil)
+                        contextLines: [], sheetVisible: map.sheet != nil,
+                        placesKey: "all:\(model.placesVersion)", places: model.places)
+    }
+
+    private func unique(_ lines: [String]) -> [String] {
+        lines.reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }
     }
 }

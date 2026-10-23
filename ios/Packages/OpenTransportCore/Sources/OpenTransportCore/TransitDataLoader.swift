@@ -163,3 +163,42 @@ func jsonDouble(_ value: Any?) -> Double? {
     if let s = value as? String { return Double(s) }
     return nil
 }
+
+/// Extra Metrovalencia facts from the bundled geojson: GTFS station names
+/// (for FGV accessibility alerts) and each line's brand colour.
+public struct MetroAssets: Sendable {
+    public let stationNames: [Int: String]
+    /// "M1" → 0xFEC601
+    public let lineColors: [String: Int]
+
+    public static func load(from directory: URL) -> MetroAssets {
+        guard let data = try? Data(contentsOf: directory.appendingPathComponent("metrovalencia.geojson")) else {
+            return MetroAssets(stationNames: [:], lineColors: [:])
+        }
+        return parse(data)
+    }
+
+    static func parse(_ data: Data) -> MetroAssets {
+        guard
+            let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let features = root["features"] as? [[String: Any]]
+        else { return MetroAssets(stationNames: [:], lineColors: [:]) }
+        var names: [Int: String] = [:]
+        var colors: [String: Int] = [:]
+        for feature in features {
+            let properties = feature["properties"] as? [String: Any] ?? [:]
+            switch (feature["geometry"] as? [String: Any])?["type"] as? String {
+            case "Point":
+                if let id = jsonInt(properties["stop_id"]), let name = properties["stop_name"] as? String { names[id] = name }
+            case "LineString":
+                if let line = jsonInt(properties["line"]), let hex = properties["color"] as? String,
+                   let value = Int(hex.trimmingCharacters(in: CharacterSet(charactersIn: "#")), radix: 16) {
+                    colors["M\(line)"] = value
+                }
+            default:
+                break
+            }
+        }
+        return MetroAssets(stationNames: names, lineColors: colors)
+    }
+}
