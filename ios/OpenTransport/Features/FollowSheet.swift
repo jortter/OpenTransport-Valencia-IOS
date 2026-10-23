@@ -58,6 +58,11 @@ struct FollowSheet: View {
                     Menu {
                         if let bus {
                             Button {
+                                model.togglePin(ArrivalAlerts.stopPin(bus.nextStop, bus.line))
+                            } label: {
+                                Label(s.alertAtNextStop, systemImage: "bell")
+                            }
+                            Button {
                                 openInMaps(lat: bus.render.lat, lon: bus.render.lon, name: s.busTitle(number))
                             } label: {
                                 Label(s.openPositionInMaps, systemImage: "map")

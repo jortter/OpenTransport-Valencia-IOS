@@ -27,12 +27,13 @@ struct StopSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItemGroup(placement: .topBarLeading) {
+                    let key = AppModel.stopKey(stopId)
                     Button {
-                        model.toggleFavorite(stopId)
+                        model.toggleFavorite(key)
                     } label: {
-                        Image(systemName: model.isFavorite(stopId) ? "star.fill" : "star")
+                        Image(systemName: model.isFavorite(key) ? "star.fill" : "star")
                     }
-                    .accessibilityLabel(model.isFavorite(stopId) ? s.removeFavourite : s.addFavourite)
+                    .accessibilityLabel(model.isFavorite(key) ? s.removeFavourite : s.addFavourite)
                     if let stop {
                         ShareLink(item: shareText(stop)) {
                             Image(systemName: "square.and.arrow.up")
@@ -87,14 +88,24 @@ struct StopSheet: View {
                 }
             } else if let arrivals = info?.arrivals, !arrivals.isEmpty {
                 ForEach(Array(arrivals.enumerated()), id: \.offset) { _, arrival in
-                    // Tapping an arrival focuses its line, as on Android.
-                    Button {
-                        model.map.selectLine(arrival.line)
-                    } label: {
-                        ArrivalRow(arrival: arrival, near: info?.buses.first { $0.line == arrival.line })
+                    let pin = ArrivalAlerts.stopPin(stop.id, arrival.line)
+                    HStack(spacing: 4) {
+                        // Tapping an arrival focuses its line, as on Android.
+                        Button {
+                            model.map.selectLine(arrival.line)
+                        } label: {
+                            ArrivalRow(arrival: arrival, near: info?.buses.first { $0.line == arrival.line })
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        PinButton(pin: pin)
                     }
-                    .tint(.primary)
                     .contextMenu {
+                        Button {
+                            model.togglePin(pin)
+                        } label: {
+                            Label(s.alertThisLine, systemImage: model.isPinned(pin) ? "bell.slash" : "bell")
+                        }
                         Button {
                             openInMaps(lat: stop.lat, lon: stop.lon, name: stop.cleanName)
                         } label: {
@@ -179,5 +190,27 @@ struct ArrivalRow: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+}
+
+/// The bell that pins a stop+line for arrival alerts.
+struct PinButton: View {
+    let pin: String
+
+    @Environment(AppModel.self) private var model
+    @Environment(\.strings) private var s
+
+    var body: some View {
+        let pinned = model.isPinned(pin)
+        Button {
+            model.togglePin(pin)
+        } label: {
+            Image(systemName: pinned ? "bell.fill" : "bell")
+                .foregroundStyle(pinned ? Color.accentColor : Color.secondary)
+                .frame(width: 36, height: 36)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .accessibilityLabel(s.alertThisLine)
     }
 }

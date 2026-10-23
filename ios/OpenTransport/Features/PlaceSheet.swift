@@ -26,7 +26,13 @@ struct PlaceSheet: View {
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
+                ToolbarItemGroup(placement: .topBarLeading) {
+                    Button {
+                        model.toggleFavorite(place.id)
+                    } label: {
+                        Image(systemName: model.isFavorite(place.id) ? "star.fill" : "star")
+                    }
+                    .accessibilityLabel(model.isFavorite(place.id) ? s.removeFavourite : s.addFavourite)
                     ShareLink(item: "\(place.name)\nhttps://maps.apple.com/?ll=\(place.lat),\(place.lon)") {
                         Image(systemName: "square.and.arrow.up")
                     }
@@ -256,6 +262,7 @@ private struct MetrobusArrivals: View {
                                 .font(.subheadline.weight(.semibold))
                                 .monospacedDigit()
                                 .foregroundStyle(Color.accentColor)
+                            PinButton(pin: ArrivalAlerts.metrobusPin(place.id, arrival.line))
                         }
                     }
                 }

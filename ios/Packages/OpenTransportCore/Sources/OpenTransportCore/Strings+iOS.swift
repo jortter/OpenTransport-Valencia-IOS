@@ -35,6 +35,22 @@ extension Strings {
              "S'ofereix «tal qual», sense garantia; els temps i posicions poden arribar amb retard o ser inexactes. Usa la informació oficial dels operadors per a decidir els teus viatges.")
     }
 
+    public func nextLabel(_ value: String) -> String { pick("Próxima: \(value)", "Next: \(value)", "Pròxima: \(value)") }
+
+    /// Valenbisi summary (Android's `placeSubtitle`).
+    public func bikesSummary(available: Int, free: Int, open: Bool) -> String {
+        if !open { return closed }
+        if available <= 0 { return pick("Sin bicis · \(free) anclajes libres", "No bikes · \(free) free docks", "Sense bicis · \(free) ancoratges lliures") }
+        if free <= 0 { return pick("\(available) bicis · sin anclajes libres", "\(available) bikes · no free docks", "\(available) bicis · sense ancoratges lliures") }
+        return pick("\(available) bicis · \(free) anclajes libres", "\(available) bikes · \(free) free docks", "\(available) bicis · \(free) ancoratges lliures")
+    }
+
+    public var alertsWhileOpen: String {
+        pick("En iPhone los avisos funcionan mientras la app está abierta o en segundo plano reciente.",
+             "On iPhone alerts work while the app is open or recently in the background.",
+             "En iPhone els avisos funcionen mentre l'app està oberta o en segon pla recent.")
+    }
+
     public func lineTitle(_ line: String) -> String { pick("Línea \(line)", "Line \(line)", "Línia \(line)") }
 
     public func liveBuses(_ count: Int) -> String {
