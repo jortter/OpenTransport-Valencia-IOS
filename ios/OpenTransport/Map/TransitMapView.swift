@@ -114,6 +114,8 @@ struct TransitMapView: UIViewRepresentable {
         private var displayLink: CADisplayLink?
         private var drewNoBuses = false
         private var lastFollowed: Int?
+        /// Valenbisi pill images already added to the current style.
+        private var registeredPills: Set<String> = []
 
         static let stopsSource = "emt-stops"
         static let stopsLayer = "emt-stops"
@@ -126,6 +128,7 @@ struct TransitMapView: UIViewRepresentable {
         static let placesLayer = "emt-places"
         static let placesClustersLayer = "emt-places-clusters"
         static let contextLayer = "emt-context-routes"
+        static let bikesLayer = "emt-vb-pills"
 
         init(_ parent: TransitMapView) {
             self.parent = parent
@@ -136,6 +139,7 @@ struct TransitMapView: UIViewRepresentable {
         func resetStyleState() {
             style = nil
             appliedScene = nil
+            registeredPills = []
         }
 
         func mapView(_ mapView: MLNMapView, didFinishLoading style: MLNStyle) {
@@ -250,7 +254,7 @@ struct TransitMapView: UIViewRepresentable {
             style.addLayer(count)
 
             let icons = MLNSymbolStyleLayer(identifier: Self.placesLayer, source: places)
-            icons.predicate = NSPredicate(format: "cluster != YES")
+            icons.predicate = NSPredicate(format: "cluster != YES AND network != 'Valenbisi'")
             icons.iconImageName = NSExpression(forMLNMatchingKey: NSExpression(forKeyPath: "network"),
                                                in: Dictionary(uniqueKeysWithValues: Network.allCases.map {
                                                    (NSExpression(forConstantValue: $0.rawValue), NSExpression(forConstantValue: Self.iconName($0)))
@@ -260,8 +264,17 @@ struct TransitMapView: UIViewRepresentable {
             icons.iconIgnoresPlacement = NSExpression(forConstantValue: true)
             style.addLayer(icons)
 
+            // Valenbisi: a pill with the dock logo and the bikes available,
+            // coloured by availability (one image per count and state).
+            let pills = MLNSymbolStyleLayer(identifier: Self.bikesLayer, source: places)
+            pills.predicate = NSPredicate(format: "cluster != YES AND network == 'Valenbisi'")
+            pills.iconImageName = NSExpression(forKeyPath: "pill")
+            pills.iconAllowsOverlap = NSExpression(forConstantValue: true)
+            pills.iconIgnoresPlacement = NSExpression(forConstantValue: true)
+            style.addLayer(pills)
+
             let labels = MLNSymbolStyleLayer(identifier: "emt-places-labels", source: places)
-            labels.predicate = NSPredicate(format: "cluster != YES")
+            labels.predicate = NSPredicate(format: "cluster != YES AND network != 'Valenbisi'")
             labels.minimumZoomLevel = 14.5
             labels.text = NSExpression(forKeyPath: "name")
             labels.textFontSize = NSExpression(forConstantValue: 11)
@@ -270,6 +283,35 @@ struct TransitMapView: UIViewRepresentable {
             labels.textHaloWidth = NSExpression(forConstantValue: 1.2)
             labels.textOffset = NSExpression(forConstantValue: NSValue(cgVector: CGVector(dx: 0, dy: 1.6)))
             style.addLayer(labels)
+        }
+
+        /// Name of the pill image for a station, adding it to the style if new.
+        private func pill(for place: Place, in style: MLNStyle) -> String {
+            let state = BikeAvailability(place)
+            let count = max(place.available, 0)
+            let name = "vb-\(state.rawValue)-\(count)"
+            if !registeredPills.contains(name), let logo = Self.serviceIcon(.valenbisi) {
+                style.setImage(Self.pillImage(count: count, color: state.color, logo: logo), forName: name)
+                registeredPills.insert(name)
+            }
+            return name
+        }
+
+        static func pillImage(count: Int, color: UIColor, logo: UIImage) -> UIImage {
+            let text = NSAttributedString(string: "\(count)", attributes: [
+                .font: UIFont.systemFont(ofSize: 13, weight: .bold),
+                .foregroundColor: UIColor.white,
+            ])
+            let textSize = text.size()
+            let height: CGFloat = 28
+            let size = CGSize(width: 4 + 22 + 5 + ceil(textSize.width) + 9, height: height)
+            return UIGraphicsImageRenderer(size: size).image { _ in
+                let body = CGRect(origin: .zero, size: size)
+                color.setFill()
+                UIBezierPath(roundedRect: body, cornerRadius: height / 2).fill()
+                logo.draw(in: CGRect(x: 4, y: (height - 22) / 2, width: 22, height: 22))
+                text.draw(at: CGPoint(x: 4 + 22 + 5, y: (height - textSize.height) / 2))
+            }
         }
 
         static func iconName(_ network: Network) -> String { "\(network.rawValue.lowercased())-icon" }
@@ -358,7 +400,9 @@ struct TransitMapView: UIViewRepresentable {
                 source.shape = MLNShapeCollectionFeature(shapes: scene.places.map { place in
                     let feature = MLNPointFeature()
                     feature.coordinate = CLLocationCoordinate2D(latitude: place.lat, longitude: place.lon)
-                    feature.attributes = ["id": place.id, "network": place.network.rawValue, "name": place.name]
+                    var attributes: [String: Any] = ["id": place.id, "network": place.network.rawValue, "name": place.name]
+                    if place.network == .valenbisi { attributes["pill"] = pill(for: place, in: style) }
+                    feature.attributes = attributes
                     return feature
                 })
             }
@@ -493,7 +537,7 @@ struct TransitMapView: UIViewRepresentable {
 
             let rect = CGRect(x: point.x - 15, y: point.y - 15, width: 30, height: 30)
             let features = map.visibleFeatures(in: rect, styleLayerIdentifiers: [
-                Self.stopsLayer, Self.clustersLayer, Self.placesLayer, Self.placesClustersLayer,
+                Self.stopsLayer, Self.clustersLayer, Self.placesLayer, Self.placesClustersLayer, Self.bikesLayer,
             ])
             if let cluster = features.first(where: { $0 is MLNPointFeatureCluster }) {
                 map.setCenter(cluster.coordinate, zoomLevel: map.zoomLevel + 2, animated: true)
@@ -536,5 +580,26 @@ extension UIColor {
     convenience init(hex: Int) {
         self.init(red: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255,
                   blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
+    }
+}
+
+/// Valenbisi station state (Android's `placeColor`): closed, empty, full or ok.
+enum BikeAvailability: String {
+    case closed, empty, full, ok
+
+    init(_ place: Place) {
+        if !place.open { self = .closed }
+        else if place.available <= 0 { self = .empty }
+        else if place.free <= 0 { self = .full }
+        else { self = .ok }
+    }
+
+    var color: UIColor {
+        switch self {
+        case .closed: return UIColor(hex: 0x9CA3AF)
+        case .empty: return UIColor(hex: 0xEF4444)
+        case .full: return UIColor(hex: 0xF59E0B)
+        case .ok: return UIColor(hex: 0x22C55E)
+        }
     }
 }

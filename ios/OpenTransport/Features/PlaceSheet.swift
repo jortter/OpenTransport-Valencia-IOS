@@ -17,6 +17,7 @@ struct PlaceSheet: View {
                 Section { header }
                 switch place.network {
                 case .metro: MetroArrivals(place: place)
+                case .valenbisi: BikeStation(place: place)
                 default: EmptyView()
                 }
                 updatesSection
@@ -128,5 +129,100 @@ private struct MetroArrivals: View {
                 try? await Task.sleep(for: .seconds(30))
             }
         }
+    }
+}
+
+/// Valenbisi station: bikes and free docks, open state and the docked bikes.
+private struct BikeStation: View {
+    let place: Place
+
+    @Environment(AppModel.self) private var model
+    @Environment(\.strings) private var s
+    @State private var bikes: [Bike]?
+
+    var body: some View {
+        let total = max(max(place.available, 0) + max(place.free, 0), 1)
+        Section {
+            HStack(spacing: 12) {
+                StatCard(systemImage: "bicycle", value: max(place.available, 0), label: s.bikes,
+                         color: Color(hex: 0x22C55E), fraction: Double(max(place.available, 0)) / Double(total))
+                StatCard(systemImage: "parkingsign", value: max(place.free, 0), label: s.freeDocks,
+                         color: Color(hex: 0x1E88E5), fraction: Double(max(place.free, 0)) / Double(total))
+            }
+            .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8))
+            .listRowBackground(Color.clear)
+            HStack {
+                Label(place.open ? s.open : s.closed, systemImage: place.open ? "checkmark.circle.fill" : "xmark.circle.fill")
+                    .foregroundStyle(place.open ? Color.green : Color.secondary)
+                Spacer()
+                if place.mechanical >= 0, place.electric >= 0 {
+                    Text("\(s.mechanicalBikes) \(place.mechanical) · \(s.electricBikes) \(place.electric)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        Section(s.bikes) {
+            if let bikes {
+                if bikes.isEmpty {
+                    Text(s.noBikesDocked).foregroundStyle(.secondary)
+                } else {
+                    ForEach(bikes, id: \.number) { bike in
+                        HStack(spacing: 12) {
+                            Image(systemName: bike.type.uppercased().contains("ELECTRIC") ? "bolt.circle.fill" : "bicycle.circle.fill")
+                                .font(.title2)
+                                .foregroundStyle(Color.accentColor)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(s.standTitle(bike.stand)).font(.subheadline.weight(.semibold))
+                                Text("\(s.bikeTitle(bike.number)) · \(bike.type.capitalized)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if bike.ratings > 0 {
+                                Label("\(Int(bike.rating / 20)) (\(bike.ratings))", systemImage: "star.fill")
+                                    .font(.caption)
+                            } else {
+                                Text(s.noRating).font(.caption2).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+            } else {
+                HStack {
+                    Spacer()
+                    ProgressView()
+                    Spacer()
+                }
+            }
+        }
+        .task(id: place.id) {
+            guard let number = Int(place.id.dropFirst(3)) else {
+                bikes = []
+                return
+            }
+            bikes = await model.valenbisi.bikes(station: number)
+        }
+    }
+}
+
+/// Big number with a progress bar (Android's `StatCard`).
+private struct StatCard: View {
+    let systemImage: String
+    let value: Int
+    let label: String
+    let color: Color
+    let fraction: Double
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Image(systemName: systemImage).foregroundStyle(color)
+            Text("\(value)").font(.largeTitle.weight(.bold)).foregroundStyle(color)
+            Text(label).font(.subheadline).foregroundStyle(.secondary)
+            ProgressView(value: min(max(fraction, 0), 1)).tint(color)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(color.opacity(0.14), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }
