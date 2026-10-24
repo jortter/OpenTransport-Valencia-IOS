@@ -95,6 +95,7 @@ final class AppModel {
             )
             location.start()
             alerts.start(model: self)
+            startMetrobus()
             openDemoSelection()
             async let metroStations = metro.stations()
             await refreshIncidents()
