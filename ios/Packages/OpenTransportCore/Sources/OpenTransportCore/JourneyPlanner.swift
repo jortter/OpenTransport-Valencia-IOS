@@ -95,62 +95,64 @@ public final class JourneyPlanner: @unchecked Sendable {
         sequence[key(line, dir)]?.last.flatMap { transit.stopsById[$0]?.name } ?? line
     }
 
+    private typealias Walk = (meters: Double, seconds: Double)
+
+    /// One bus ride of a candidate trip.
+    private struct Ride {
+        let line: String
+        let dir: String
+        let board: Stop
+        let alight: Stop
+        let stops: Int
+        let minutes: Double
+    }
+
+    /// A trip before live waits are known.
+    private struct Candidate {
+        let origin: Stop
+        let destination: Stop
+        let rides: [Ride]
+
+        var signature: String { rides.map { "\($0.line):\($0.board.name)" }.joined(separator: "|") }
+    }
+
+    /// Walks to (or from) several stops at once.
+    private func walks(_ stops: [Stop], _ walk: @escaping @Sendable (Stop) async -> Walk) async -> [Int: Walk] {
+        await withTaskGroup(of: (Int, Walk).self) { group in
+            for stop in stops { group.addTask { (stop.id, await walk(stop)) } }
+            var out: [Int: Walk] = [:]
+            for await (id, value) in group { out[id] = value }
+            return out
+        }
+    }
+
+    /// Plans in three steps so it stays fast: the street walks in parallel,
+    /// then every direct / one-transfer ride offline, then live waits only for
+    /// the best few candidates (again in parallel). Asking for every wait one
+    /// by one took minutes.
     public func plan(from origin: LonLat, to destination: LonLat, maxWalk: Double = JourneyPlanner.maxWalkMeters) async -> [JourneyOption] {
         let originStops = stopsNear(origin, maxWalk: maxWalk)
         let destStops = stopsNear(destination, maxWalk: maxWalk)
         let destLines = Set(destStops.flatMap { linesAt($0.id) })
-        var options: [JourneyOption] = []
-        var waitCache: [String: Int?] = [:]
-        var walkCache: [Int: (meters: Double, seconds: Double)] = [:]
+        let streetWalk = self.streetWalk
 
-        func wait(_ stopId: Int, _ line: String) async -> Int {
-            let cacheKey = "\(stopId):\(line)"
-            if let cached = waitCache[cacheKey] { return cached ?? Self.defaultWait }
-            let value = await nextBus(stopId, line)
-            waitCache[cacheKey] = value
-            return value ?? Self.defaultWait
-        }
+        async let originWalks = walks(originStops) { await streetWalk(origin, LonLat(lon: $0.lon, lat: $0.lat)) }
+        async let destWalks = walks(destStops) { await streetWalk(LonLat(lon: $0.lon, lat: $0.lat), destination) }
+        let walkO = (await originWalks).filter { $0.value.meters <= maxWalk }
+        let walkD = (await destWalks).filter { $0.value.meters <= maxWalk }
 
-        func walkToDestination(_ stop: Stop) async -> (meters: Double, seconds: Double) {
-            if let cached = walkCache[stop.id] { return cached }
-            let value = await streetWalk(LonLat(lon: stop.lon, lat: stop.lat), destination)
-            walkCache[stop.id] = value
-            return value
-        }
-
-        for originStop in originStops {
-            let walkO = await streetWalk(origin, LonLat(lon: originStop.lon, lat: originStop.lat))
-            if walkO.meters > maxWalk { continue }
-            let walkOMinutes = walkO.seconds / 60
-            let firstLeg = JourneyLeg.walking(minutes: max(1, Int(walkOMinutes.rounded())), meters: Int(walkO.meters.rounded()),
-                                              to: originStop.name)
-
+        var candidates: [Candidate] = []
+        for originStop in originStops where walkO[originStop.id] != nil {
             for line in linesAt(originStop.id).sorted() {
                 for dir in ["ida", "vuelta"] {
                     guard let i = position[key(line, dir)]?[String(originStop.id)] else { continue }
 
                     // --- direct ride ---
-                    for destStop in destStops where destStop.lines.contains(line) {
+                    for destStop in destStops where walkD[destStop.id] != nil && destStop.lines.contains(line) {
                         guard let j = position[key(line, dir)]?[String(destStop.id)], j > i else { continue }
-                        let walkD = await walkToDestination(destStop)
-                        if walkD.meters > maxWalk { continue }
-                        let rideMinutes = ride(line, dir, from: i, to: j)
-                        let waitMinutes = await wait(originStop.id, line)
-                        let total = walkOMinutes + Double(waitMinutes) + rideMinutes + walkD.seconds / 60
-                        options.append(JourneyOption(
-                            totalMinutes: Int(total.rounded()),
-                            walkMeters: Int((walkO.meters + walkD.meters).rounded()),
-                            transfers: 0,
-                            legs: [
-                                firstLeg,
-                                JourneyLeg(walk: false, minutes: max(1, Int(rideMinutes.rounded())), meters: 0, line: line,
-                                           direction: dir, towards: terminus(line, dir), boardStop: originStop.name,
-                                           alightStop: destStop.name, stops: j - i, waitMinutes: waitMinutes,
-                                           boardStopId: originStop.id, alightStopId: destStop.id),
-                                .walking(minutes: max(1, Int((walkD.seconds / 60).rounded())), meters: Int(walkD.meters.rounded()),
-                                         to: "destination"),
-                            ]
-                        ))
+                        let ride = Ride(line: line, dir: dir, board: originStop, alight: destStop, stops: j - i,
+                                        minutes: self.ride(line, dir, from: i, to: j))
+                        candidates.append(Candidate(origin: originStop, destination: destStop, rides: [ride]))
                     }
 
                     // --- one transfer ---
@@ -162,34 +164,13 @@ public final class JourneyPlanner: @unchecked Sendable {
                         for line2 in linesAt(transfer.id).subtracting([line]).sorted() where destLines.contains(line2) {
                             for dir2 in ["ida", "vuelta"] {
                                 guard let ix = position[key(line2, dir2)]?[String(transfer.id)] else { continue }
-                                for destStop in destStops where destStop.lines.contains(line2) {
+                                for destStop in destStops where walkD[destStop.id] != nil && destStop.lines.contains(line2) {
                                     guard let j2 = position[key(line2, dir2)]?[String(destStop.id)], j2 > ix else { continue }
-                                    let walkD = await walkToDestination(destStop)
-                                    if walkD.meters > maxWalk { continue }
-                                    let ride1 = ride(line, dir, from: i, to: k)
-                                    let ride2 = ride(line2, dir2, from: ix, to: j2)
-                                    let wait1 = await wait(originStop.id, line)
-                                    let wait2 = await wait(transfer.id, line2)
-                                    let total = walkOMinutes + Double(wait1) + ride1 + Self.transferPenalty
-                                        + Double(wait2) + ride2 + walkD.seconds / 60
-                                    options.append(JourneyOption(
-                                        totalMinutes: Int(total.rounded()),
-                                        walkMeters: Int((walkO.meters + walkD.meters).rounded()),
-                                        transfers: 1,
-                                        legs: [
-                                            firstLeg,
-                                            JourneyLeg(walk: false, minutes: max(1, Int(ride1.rounded())), meters: 0, line: line,
-                                                       direction: dir, towards: terminus(line, dir), boardStop: originStop.name,
-                                                       alightStop: transfer.name, stops: k - i, waitMinutes: wait1,
-                                                       boardStopId: originStop.id, alightStopId: transfer.id),
-                                            JourneyLeg(walk: false, minutes: max(1, Int(ride2.rounded())), meters: 0, line: line2,
-                                                       direction: dir2, towards: terminus(line2, dir2), boardStop: transfer.name,
-                                                       alightStop: destStop.name, stops: j2 - ix, waitMinutes: wait2,
-                                                       boardStopId: transfer.id, alightStopId: destStop.id),
-                                            .walking(minutes: max(1, Int((walkD.seconds / 60).rounded())),
-                                                     meters: Int(walkD.meters.rounded()), to: "destination"),
-                                        ]
-                                    ))
+                                    let first = Ride(line: line, dir: dir, board: originStop, alight: transfer, stops: k - i,
+                                                     minutes: self.ride(line, dir, from: i, to: k))
+                                    let second = Ride(line: line2, dir: dir2, board: transfer, alight: destStop, stops: j2 - ix,
+                                                      minutes: self.ride(line2, dir2, from: ix, to: j2))
+                                    candidates.append(Candidate(origin: originStop, destination: destStop, rides: [first, second]))
                                 }
                             }
                         }
@@ -198,11 +179,55 @@ public final class JourneyPlanner: @unchecked Sendable {
             }
         }
 
-        var seen = Set<String>()
-        let ranked = options.sorted { $0.totalMinutes < $1.totalMinutes }.filter { option in
-            let signature = option.legs.filter { !$0.walk }.map { "\($0.line ?? ""):\($0.boardStop ?? "")" }.joined(separator: "|")
-            return seen.insert(signature).inserted
+        func total(_ c: Candidate, wait: (Ride) -> Int) -> Double {
+            guard let o = walkO[c.origin.id], let d = walkD[c.destination.id] else { return .infinity }
+            return o.seconds / 60 + d.seconds / 60 + Double(c.rides.count - 1) * Self.transferPenalty
+                + c.rides.reduce(0) { $0 + Double(wait($1)) + $1.minutes }
         }
+
+        // Best few by the default wait, one per signature.
+        var seenSignatures = Set<String>()
+        let shortlist = candidates
+            .map { ($0, total($0) { _ in Self.defaultWait }) }
+            .sorted { $0.1 < $1.1 }
+            .map(\.0)
+            .filter { seenSignatures.insert($0.signature).inserted }
+            .prefix(Self.maxOptions * 3)
+
+        // Live waits for just those rides, in parallel.
+        let nextBus = self.nextBus
+        let pairs = Set(shortlist.flatMap { $0.rides.map { "\($0.board.id):\($0.line)" } })
+        let waits: [String: Int] = await withTaskGroup(of: (String, Int?).self) { group in
+            for pair in pairs {
+                let parts = pair.split(separator: ":", maxSplits: 1)
+                guard parts.count == 2, let stop = Int(parts[0]) else { continue }
+                let line = String(parts[1])
+                group.addTask { (pair, await nextBus(stop, line)) }
+            }
+            var out: [String: Int] = [:]
+            for await (pair, value) in group { out[pair] = value ?? Self.defaultWait }
+            return out
+        }
+        func wait(_ ride: Ride) -> Int { waits["\(ride.board.id):\(ride.line)"] ?? Self.defaultWait }
+
+        let options: [JourneyOption] = shortlist.compactMap { c in
+            guard let o = walkO[c.origin.id], let d = walkD[c.destination.id] else { return nil }
+            let minutes = total(c, wait: wait)
+            guard minutes.isFinite else { return nil }
+            var legs = [JourneyLeg.walking(minutes: max(1, Int((o.seconds / 60).rounded())), meters: Int(o.meters.rounded()),
+                                           to: c.origin.name)]
+            for ride in c.rides {
+                legs.append(JourneyLeg(walk: false, minutes: max(1, Int(ride.minutes.rounded())), meters: 0, line: ride.line,
+                                       direction: ride.dir, towards: terminus(ride.line, ride.dir), boardStop: ride.board.name,
+                                       alightStop: ride.alight.name, stops: ride.stops, waitMinutes: wait(ride),
+                                       boardStopId: ride.board.id, alightStopId: ride.alight.id))
+            }
+            legs.append(.walking(minutes: max(1, Int((d.seconds / 60).rounded())), meters: Int(d.meters.rounded()), to: "destination"))
+            return JourneyOption(totalMinutes: Int(minutes.rounded()), walkMeters: Int((o.meters + d.meters).rounded()),
+                                 transfers: c.rides.count - 1, legs: legs)
+        }
+
+        let ranked = options.sorted { $0.totalMinutes < $1.totalMinutes }
         // If a direct ride is at least as fast, transfer options are noise.
         let fastestDirect = ranked.filter { $0.transfers == 0 }.map(\.totalMinutes).min()
         let useful = fastestDirect.map { fastest in ranked.filter { $0.transfers == 0 || $0.totalMinutes < fastest } } ?? ranked
