@@ -180,17 +180,18 @@ final class AppModel {
         }
     }
 
-    /// Metrobús has no bulk stop list: load it around the user (or the city
-    /// centre) and refresh every 5 minutes, like Android.
+    /// Metrobús has no bulk stop list, but one query from the city centre
+    /// with a huge radius returns the whole network (~1100 stops, 400 KB).
+    /// Around the user's location it can come back empty (outside the 7 km
+    /// default radius), so the stops never showed. Retry every minute until
+    /// it loads, then refresh hourly.
     private func startMetrobus() {
         metrobusTask = Task { [weak self] in
-            // Give the first location fix a moment before the first load.
-            try? await Task.sleep(for: .seconds(3))
             while !Task.isCancelled {
                 guard let self else { return }
-                let anchor = self.location.location ?? LonLat(lon: -0.3763, lat: 39.4699)
-                self.replacePlaces(of: .metrobus, with: await self.metrobus.stops(lat: anchor.lat, lon: anchor.lon))
-                try? await Task.sleep(for: .seconds(5 * 60))
+                let stops = await self.metrobus.stops(lat: 39.4699, lon: -0.3763, radius: 2_000_000)
+                if !stops.isEmpty { self.replacePlaces(of: .metrobus, with: stops) }
+                try? await Task.sleep(for: .seconds(stops.isEmpty ? 60 : 60 * 60))
             }
         }
     }

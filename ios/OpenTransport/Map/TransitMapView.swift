@@ -67,6 +67,9 @@ struct TransitMapView: UIViewRepresentable {
         map.automaticallyAdjustsContentInset = false // the sheet inset is managed in applyLayout
         map.showsUserLocation = true
         map.allowsRotating = true
+        // The search bar covers the top-right corner: put the compass below it.
+        map.compassViewPosition = .topRight
+        map.compassViewMargins = CGPoint(x: 16, y: 68)
 
         let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
         tap.delegate = context.coordinator
