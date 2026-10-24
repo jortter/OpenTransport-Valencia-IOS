@@ -1,0 +1,25 @@
+name: API probe
+
+# Calls the Metrobús (Softour) API the way the app does and prints the
+# replies, to debug sources that the development sandbox cannot reach.
+on:
+  push:
+    paths:
+      - ".github/workflows/probe.yml"
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Metrobús
+        run: |
+          H=(-H 'Accept: application/json' -H 'User-Agent: Mozilla/5.0 (Linux; Android 17; Pixel 8a)'
+             -H 'x-requested-with: com.softoursistemas.metgovalencia' -H 'Origin: https://localhost' -H 'Referer: https://localhost/')
+          probe() { echo "::group::$1"; shift; curl -sS -m 30 -w '\nHTTP %{http_code} · %{size_download} B\n' "$@" | head -c 1500; echo; echo "::endgroup::"; }
+          probe "stops/near (POST, as the app)" -X POST "${H[@]}" -H 'Content-Type: application/json' \
+            -d '{"radius":7000,"lat":39.4699,"lon":-0.3763}' https://api.softoursistemas.com/metrobus/stops/near
+          probe "old/routes" "${H[@]}" https://api.softoursistemas.com/metrobus/old/routes
+          probe "stops/near without app headers" -X POST -H 'Content-Type: application/json' \
+            -d '{"radius":7000,"lat":39.4699,"lon":-0.3763}' https://api.softoursistemas.com/metrobus/stops/near
