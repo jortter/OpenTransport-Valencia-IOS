@@ -129,12 +129,7 @@ struct StopWidgetView: View {
                 } else {
                     ForEach(Array(entry.rows.prefix(family == .systemSmall ? 3 : 4).enumerated()), id: \.offset) { _, row in
                         HStack(spacing: 6) {
-                            Text(row.0)
-                                .font(.caption2.weight(.bold))
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 5)
-                                .frame(minWidth: 28, minHeight: 18)
-                                .background(widgetLineColor(row.0), in: RoundedRectangle(cornerRadius: 4))
+                            WidgetLineBadge(line: row.0)
                             if family != .systemSmall {
                                 Text(row.1).font(.caption).lineLimit(1)
                             }
@@ -193,4 +188,25 @@ enum WidgetText {
     static var noBuses: String { strings.noUpcomingBuses }
     static var chooseStop: String { strings.searchStop }
     static var description: String { strings.nextDepartures }
+}
+
+/// The line number on its colour. In the tinted, clear and lock-screen
+/// styles iOS draws everything in one colour, so a filled badge would hide
+/// its own number: there it becomes an outline in the accent colour.
+private struct WidgetLineBadge: View {
+    let line: String
+    @Environment(\.widgetRenderingMode) private var renderingMode
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 4)
+        let text = Text(line)
+            .font(.caption2.weight(.bold))
+            .padding(.horizontal, 5)
+            .frame(minWidth: 28, minHeight: 18)
+        if renderingMode == .fullColor {
+            text.foregroundStyle(.white).background(widgetLineColor(line), in: shape)
+        } else {
+            text.overlay(shape.strokeBorder(lineWidth: 1.5)).widgetAccentable()
+        }
+    }
 }
