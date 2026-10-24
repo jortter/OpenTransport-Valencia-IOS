@@ -85,13 +85,15 @@ struct MapTab: View {
 
     /// Layers, 3D, north-up and "my location", bottom right like Android.
     private var mapButtons: some View {
-        VStack(spacing: 12) {
-            roundButton("square.3.layers.3d", label: s.mapLayers) { present { showLayers = true } }
-            roundButton(model.map.tilted ? "view.2d" : "view.3d", label: s.view3D) { model.map.toggleTilt() }
-            roundButton("location.north.line.fill", label: s.resetView) { model.map.resetView() }
-            roundButton("location.fill", label: s.myLocation) {
-                recenterRequest += 1
-                model.map.showNearby()
+        GlassGroup(spacing: 12) {
+            VStack(spacing: 12) {
+                roundButton("square.3.layers.3d", label: s.mapLayers) { present { showLayers = true } }
+                roundButton(model.map.tilted ? "view.2d" : "view.3d", label: s.view3D) { model.map.toggleTilt() }
+                roundButton("location.north.line.fill", label: s.resetView) { model.map.resetView() }
+                roundButton("location.fill", label: s.myLocation) {
+                    recenterRequest += 1
+                    model.map.showNearby()
+                }
             }
         }
         .padding(.trailing, 16)
@@ -103,8 +105,7 @@ struct MapTab: View {
             Image(systemName: systemImage)
                 .font(.title3)
                 .frame(width: 48, height: 48)
-                .background(.regularMaterial, in: Circle())
-                .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
+                .glassBackground(in: Circle())
         }
         .accessibilityLabel(label)
     }
@@ -134,8 +135,7 @@ struct MapTab: View {
             .foregroundStyle(.secondary)
             .padding(.horizontal, 16)
             .frame(height: 48)
-            .background(.regularMaterial, in: Capsule())
-            .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
+            .glassBackground(in: Capsule())
         }
         .buttonStyle(.plain) // keep the placeholder grey, not accent-tinted
         .padding(.horizontal, 16)
