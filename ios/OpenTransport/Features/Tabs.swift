@@ -271,6 +271,9 @@ struct SettingsTab: View {
                 } footer: {
                     Text("\(s.arrivalAlertsDesc) \(s.alertsWhileOpen)")
                 }
+                Section {
+                    NavigationLink(s.diagnostics) { DiagnosticsView() }
+                }
                 Section(s.aboutSources) {
                     Text(s.aboutUnofficial).font(.footnote).foregroundStyle(.secondary)
                     Text(s.aboutData).font(.footnote).foregroundStyle(.secondary)

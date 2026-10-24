@@ -73,6 +73,10 @@ extension Strings {
     public var liveBusesTitle: String { pick("Autobuses en directo", "Live buses", "Autobusos en directe") }
     public func nextStopName(_ name: String) -> String { pick("Próxima: \(name)", "Next: \(name)", "Pròxima: \(name)") }
 
+    public var diagnostics: String { pick("Diagnóstico de red", "Network diagnostics", "Diagnòstic de xarxa") }
+    public var loadedPoints: String { pick("Puntos cargados", "Loaded points", "Punts carregats") }
+    public var requests: String { pick("Últimas peticiones", "Latest requests", "Últimes peticions") }
+
     public func lineTitle(_ line: String) -> String { pick("Línea \(line)", "Line \(line)", "Línia \(line)") }
 
     public func liveBuses(_ count: Int) -> String {
