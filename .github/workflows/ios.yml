@@ -78,6 +78,11 @@ jobs:
           shot 6-rodalies -initialTab map -demoPlace rd-3000000
           shot 7-alerts -initialTab alerts
           shot 8-settings -initialTab settings -language es
+          shot 9-plan -initialTab plan
+          shot 10-plan-result -initialTab plan -demoPlan 7,686
+          # Crash reports, if the app died during any shot.
+          cp ~/Library/Logs/DiagnosticReports/OpenTransport*.ips ci-shots/ 2>/dev/null || true
+          for f in ci-shots/*.ips; do [ -f "$f" ] && { echo "::warning::crash report $f"; head -c 6000 "$f"; }; done
           xcrun simctl spawn "$UDID" log show --last 3m --predicate 'process == "OpenTransport"' --style compact > ci-shots/app.log 2>&1 || true
 
       - name: Build unsigned IPA

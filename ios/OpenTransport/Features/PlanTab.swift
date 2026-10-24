@@ -91,7 +91,20 @@ struct PlanTab: View {
                     picking = nil
                 }
             }
+            .task { await runDemoPlan() }
         }
+    }
+
+    /// `-demoPlan 7,686` plans between two stop ids (used by CI screenshots).
+    private func runDemoPlan() async {
+        guard let ids = UserDefaults.standard.string(forKey: "demoPlan")?.split(separator: ",").compactMap({ Int($0) }),
+              ids.count == 2 else { return }
+        // The planner is created once the network has loaded.
+        while model.planner == nil { try? await Task.sleep(for: .milliseconds(200)) }
+        guard let transit = model.transit, let a = transit.stopsById[String(ids[0])], let b = transit.stopsById[String(ids[1])] else { return }
+        from = PlanPoint(name: a.cleanName, point: LonLat(lon: a.lon, lat: a.lat))
+        to = PlanPoint(name: b.cleanName, point: LonLat(lon: b.lon, lat: b.lat))
+        await plan()
     }
 
     private func endpointRow(_ title: String, systemImage: String, placeholder: Bool, action: @escaping () -> Void) -> some View {
