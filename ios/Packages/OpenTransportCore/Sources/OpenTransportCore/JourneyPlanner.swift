@@ -49,6 +49,7 @@ public final class JourneyPlanner: @unchecked Sendable {
     static let maxRideStops = 30
     static let transferPenalty = 3.0
     static let defaultWait = 6
+    static let maxWait = 180
     static let maxOptions = 4
 
     public init(transit: TransitData, streetWalk: @escaping StreetWalk, nextBus: @escaping NextBus) {
@@ -205,7 +206,9 @@ public final class JourneyPlanner: @unchecked Sendable {
                 group.addTask { (pair, await nextBus(stop, line)) }
             }
             var out: [String: Int] = [:]
-            for await (pair, value) in group { out[pair] = value ?? Self.defaultWait }
+            // An unknown or absurd wait (e.g. Int.max for "no estimate") would
+            // overflow the trip time: use the default instead.
+            for await (pair, value) in group { out[pair] = value.flatMap { (0...Self.maxWait).contains($0) ? $0 : nil } ?? Self.defaultWait }
             return out
         }
         func wait(_ ride: Ride) -> Int { waits["\(ride.board.id):\(ride.line)"] ?? Self.defaultWait }

@@ -58,4 +58,12 @@ final class JourneyPlannerTests: XCTestCase {
         let options = await planner().plan(from: LonLat(lon: 0, lat: 0), to: LonLat(lon: 1, lat: 1))
         XCTAssertTrue(options.isEmpty)
     }
+
+    /// EMT's "no estimate" came through as Int.max and crashed the planner.
+    func testUnknownWaitDoesNotOverflow() async {
+        let a = stops[0], c = stops[2]
+        let options = await planner(waits: ["1:1": Int.max]).plan(from: LonLat(lon: a.lon, lat: a.lat), to: LonLat(lon: c.lon, lat: c.lat))
+        XCTAssertFalse(options.isEmpty)
+        XCTAssertTrue(options.allSatisfy { $0.totalMinutes < 200 })
+    }
 }

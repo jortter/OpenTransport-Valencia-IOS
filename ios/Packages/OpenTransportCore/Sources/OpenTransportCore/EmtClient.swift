@@ -106,6 +106,7 @@ public final class EmtClient: @unchecked Sendable {
         return await estimations(stopId: stopId)
             .filter { $0.line == line }
             .map { Self.etaMinutes($0, now: now) }
+            .filter { $0 != Int.max } // "no estimate" rows
             .min()
     }
 
