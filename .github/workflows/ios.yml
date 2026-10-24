@@ -42,6 +42,7 @@ jobs:
           set -o pipefail
           xcodebuild build \
             -project ios/OpenTransport.xcodeproj -scheme OpenTransport \
+            -configuration Release \
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath build/sim CODE_SIGNING_ALLOWED=NO | xcbeautify
 
@@ -56,13 +57,13 @@ jobs:
           print(phones[-1]["udid"])')
           xcrun simctl boot "$UDID"
           xcrun simctl bootstatus "$UDID" -b
-          xcrun simctl install "$UDID" build/sim/Build/Products/Debug-iphonesimulator/OpenTransport.app
+          xcrun simctl install "$UDID" build/sim/Build/Products/Release-iphonesimulator/OpenTransport.app
           xcrun simctl privacy "$UDID" grant location "$BUNDLE_ID" || true
           xcrun simctl location "$UDID" set 39.4699,-0.3763 || true
           shot() {
             name=$1; shift
             xcrun simctl launch "$UDID" "$BUNDLE_ID" -onboarded YES "$@"
-            sleep 20
+            sleep ${WAIT:-20}
             xcrun simctl io "$UDID" screenshot "ci-shots/$name.png"
             xcrun simctl terminate "$UDID" "$BUNDLE_ID" || true
           }
@@ -79,7 +80,7 @@ jobs:
           shot 7-alerts -initialTab alerts
           shot 8-settings -initialTab settings -language es
           shot 9-plan -initialTab plan
-          shot 10-plan-result -initialTab plan -demoPlan 7,686
+          WAIT=90 shot 10-plan-result -initialTab plan -demoPlan 7,686
           # Crash reports, if the app died during any shot.
           cp ~/Library/Logs/DiagnosticReports/OpenTransport*.ips ci-shots/ 2>/dev/null || true
           for f in ci-shots/*.ips; do [ -f "$f" ] && { echo "::warning::crash report $f"; head -c 6000 "$f"; }; done
