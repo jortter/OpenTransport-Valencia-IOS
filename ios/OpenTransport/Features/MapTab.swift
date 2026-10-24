@@ -8,6 +8,9 @@ struct MapTab: View {
     @State private var recenterRequest = 0
     @State private var showSearch = false
     @State private var showLayers = false
+    /// Line and bus sheets open low so the live buses stay in view.
+    @State private var detent = MapTab.peek
+    static let peek = PresentationDetent.fraction(0.32)
     /// The nearby sheet pops once, on the first location fix (until closed).
     @State private var nearbyShown = false
     @AppStorage(MapPreferences.networksKey) private var networksSetting = MapPreferences.defaultNetworks
@@ -26,6 +29,7 @@ struct MapTab: View {
                     cameraRequest: map.cameraRequest,
                     followedBus: map.followedBus,
                     follow3D: map.follow3D,
+                    sheetFraction: detent == MapTab.peek ? 0.32 : 0.5,
                     recenterRequest: recenterRequest,
                     onSelectStop: { map.selectStop($0) },
                     onSelectBus: { map.followBus($0) },
@@ -51,8 +55,15 @@ struct MapTab: View {
                 case .journey: if let journey = map.journey { JourneySheet(option: journey.option) }
                 }
             }
-            .presentationDetents([.medium, .large])
+            .presentationDetents([MapTab.peek, .medium, .large], selection: $detent)
             .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+        }
+        .onChange(of: map.sheet?.id) { _, _ in
+            switch map.sheet {
+            case .line, .bus: detent = MapTab.peek
+            case .some: detent = .medium
+            case nil: break
+            }
         }
         .onChange(of: model.location.location != nil) { _, located in
             if located, !nearbyShown, model.map.sheet == nil, model.tab == .map, !showSearch, !showLayers {

@@ -70,6 +70,9 @@ extension Strings {
     public var noRoutes: String { pick("No hay rutas con estas paradas", "No routes between these stops", "No hi ha rutes entre estes parades") }
     public var beta: String { "BETA" }
 
+    public var liveBusesTitle: String { pick("Autobuses en directo", "Live buses", "Autobusos en directe") }
+    public func nextStopName(_ name: String) -> String { pick("Próxima: \(name)", "Next: \(name)", "Pròxima: \(name)") }
+
     public func lineTitle(_ line: String) -> String { pick("Línea \(line)", "Line \(line)", "Línia \(line)") }
 
     public func liveBuses(_ count: Int) -> String {

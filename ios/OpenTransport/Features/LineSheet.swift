@@ -25,6 +25,30 @@ struct LineSheet: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                if !buses.isEmpty {
+                    // Tap a bus to follow it (on the map it is a small target).
+                    Section(s.liveBusesTitle) {
+                        ForEach(buses.sorted { $0.number < $1.number }, id: \.number) { bus in
+                            Button {
+                                model.map.followBus(bus.number)
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: "bus.fill")
+                                        .foregroundStyle(bus.direction == "vuelta" ? Color.red : Color.blue)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("\(s.busTitle(bus.number)) · \(bus.destination)").lineLimit(1)
+                                        if let next = model.transit?.stopsById[String(bus.nextStop)] {
+                                            Text(s.nextStopName(next.cleanName)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                        }
+                                    }
+                                    Spacer()
+                                    Image(systemName: "location.north.circle").foregroundStyle(Color.accentColor)
+                                }
+                            }
+                            .tint(.primary)
+                        }
+                    }
+                }
                 Section(s.stops) {
                     // Circular lines can list a stop twice: key rows by position.
                     ForEach(Array(stops.enumerated()), id: \.offset) { _, stop in

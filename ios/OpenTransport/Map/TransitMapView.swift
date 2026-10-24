@@ -47,6 +47,8 @@ struct TransitMapView: UIViewRepresentable {
     /// The camera trails this bus every frame (Android's `follow`).
     var followedBus: Int?
     var follow3D = false
+    /// Share of the map height covered by the sheet (0 when none).
+    var sheetFraction = 0.45
     /// Bumped by the "my location" button; each change recentres on the user.
     var recenterRequest: Int = 0
     var onSelectStop: (Int) -> Void
@@ -109,7 +111,7 @@ struct TransitMapView: UIViewRepresentable {
         var loadedStyle: URL?
         var lastRecenter = 0
         var lastCamera: Int?
-        var lastSheetVisible = false
+        var lastSheetFraction = 0.0
 
         private weak var style: MLNStyle?
         private var appliedScene: MapScene?
@@ -487,11 +489,12 @@ struct TransitMapView: UIViewRepresentable {
                 }
                 return
             }
-            let sheetVisible = parent.scene.sheetVisible
-            if lastSheetVisible != sheetVisible {
-                lastSheetVisible = sheetVisible
-                let bottom = sheetVisible ? map.bounds.height * 0.45 : 0
-                map.setContentInset(UIEdgeInsets(top: 0, left: 0, bottom: bottom, right: 0), animated: false, completionHandler: nil)
+            // Keep the map's centre in the part the sheet leaves visible.
+            let fraction = parent.scene.sheetVisible ? parent.sheetFraction : 0
+            if lastSheetFraction != fraction {
+                lastSheetFraction = fraction
+                map.setContentInset(UIEdgeInsets(top: 0, left: 0, bottom: map.bounds.height * fraction, right: 0),
+                                    animated: true, completionHandler: nil)
             }
             if let request = parent.cameraRequest, request.id != lastCamera {
                 lastCamera = request.id
