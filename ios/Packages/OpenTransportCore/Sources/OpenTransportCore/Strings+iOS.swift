@@ -80,15 +80,20 @@ extension Strings {
     public var metrobusBusGone: String {
         pick("Este autobús ya no envía su posición.", "This bus no longer reports its position.", "Este autobús ja no envia la seua posició.")
     }
+    /// The occupancy level alone ("baja"), empty when the API has no data.
+    public func occupancyLevel(_ level: String) -> String {
+        switch level.uppercased() {
+        case "BAJA": return pick("baja", "low", "baixa")
+        case "MEDIA": return pick("media", "medium", "mitjana")
+        case "ALTA": return pick("alta", "high", "alta")
+        case "SIN DATOS", "": return ""
+        default: return level.lowercased()
+        }
+    }
+
     /// Metrobús occupancy ("BAJA", "MEDIA", "ALTA" from the API).
     public func occupancy(_ level: String) -> String {
-        let value: String
-        switch level.uppercased() {
-        case "BAJA": value = pick("baja", "low", "baixa")
-        case "MEDIA": value = pick("media", "medium", "mitjana")
-        case "ALTA": value = pick("alta", "high", "alta")
-        default: value = level.lowercased()
-        }
+        let value = occupancyLevel(level)
         return pick("Ocupación \(value)", "Occupancy \(value)", "Ocupació \(value)")
     }
     public func nextStopName(_ name: String) -> String { pick("Próxima: \(name)", "Next: \(name)", "Pròxima: \(name)") }

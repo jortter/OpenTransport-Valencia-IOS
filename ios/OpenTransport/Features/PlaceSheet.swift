@@ -247,6 +247,14 @@ private struct MetrobusArrivals: View {
 
     private var code: String { String(place.id.dropFirst(3)) }
 
+    /// "33 min · BAJA" from the API, with the occupancy in the app's language.
+    private func minutesLabel(_ raw: String) -> String {
+        let parts = raw.components(separatedBy: " · ")
+        guard parts.count == 2 else { return raw }
+        let level = s.occupancyLevel(parts[1])
+        return level.isEmpty ? parts[0] : "\(parts[0]) · \(level)"
+    }
+
     /// How far a live bus is from this stop, in a straight line.
     private func distance(to vehicle: MetrobusVehicle) -> String {
         TransitMotion.formatDistance(TransitMotion.distanceMeters(LonLat(lon: place.lon, lat: place.lat),
@@ -265,7 +273,7 @@ private struct MetrobusArrivals: View {
                                 LineBadge(line: arrival.line)
                                 Text(arrival.destination.isEmpty ? "—" : arrival.destination).lineLimit(1)
                                 Spacer()
-                                Text(arrival.minutes)
+                                Text(minutesLabel(arrival.minutes))
                                     .font(.subheadline.weight(.semibold))
                                     .monospacedDigit()
                                     .foregroundStyle(Color.accentColor)
@@ -291,17 +299,23 @@ private struct MetrobusArrivals: View {
             if !model.metrobusVehicles.isEmpty {
                 Section(s.liveBusesTitle) {
                     ForEach(model.metrobusVehicles) { vehicle in
-                        HStack(spacing: 12) {
-                            LineBadge(line: vehicle.line)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(vehicle.destination.isEmpty ? "—" : vehicle.destination).lineLimit(1)
-                                if !vehicle.occupancy.isEmpty {
-                                    Text(s.occupancy(vehicle.occupancy)).font(.caption).foregroundStyle(.secondary)
+                        Button {
+                            model.map.selectMetrobusBus(vehicle)
+                        } label: {
+                            HStack(spacing: 12) {
+                                LineBadge(line: vehicle.line)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(vehicle.destination.isEmpty ? "—" : vehicle.destination).lineLimit(1)
+                                    if !vehicle.occupancy.isEmpty {
+                                        Text(s.occupancy(vehicle.occupancy)).font(.caption).foregroundStyle(.secondary)
+                                    }
                                 }
+                                Spacer()
+                                Text(distance(to: vehicle)).font(.subheadline).monospacedDigit().foregroundStyle(.secondary)
+                                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
                             }
-                            Spacer()
-                            Text(distance(to: vehicle)).font(.subheadline).monospacedDigit().foregroundStyle(.secondary)
                         }
+                        .tint(.primary)
                     }
                 }
             }
