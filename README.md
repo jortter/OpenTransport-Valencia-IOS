@@ -2,140 +2,100 @@
 	<img src="app/src/main/assets/OpenTransport_logo.png" alt="Logo de OpenTransport Valencia" width="180">
 </p>
 
-# OpenTransport Valencia
+# OpenTransport Valencia para iOS
 
-Aplicación Android nativa para consultar transporte público en València en
-tiempo real. El proyecto incluye una aplicación para móvil y una aplicación
-independiente para WearOS.
+Aplicación nativa para iPhone (SwiftUI) para consultar el transporte público
+de València en tiempo real. Es un port de la aplicación Android
+[OpenTransport Valencia](https://github.com/Humanoidear/OpenTransport-Valencia),
+de la que este repositorio es un fork: comparte con ella los datos estáticos
+(paradas, recorridos, logos) y las mismas fuentes de datos.
 
 ## Funciones
 
-### Aplicación móvil
+- **Mapa** con EMT, Metrovalencia, Valenbisi, Metrobús y Rodalies: capas y
+  estilo configurables, vista 3D, brújula, "mi ubicación" y paradas cercanas.
+- **Autobuses EMT en directo**, animados sobre su recorrido; seguir un bus con
+  la cámara detrás (2D o 3D) y ver sus próximas paradas.
+- **Autobuses de Metrobús en directo** de las líneas de la parada seleccionada,
+  con destino y ocupación.
+- **Paradas y estaciones**: llegadas en directo de EMT, Metro y Metrobús
+  (con ocupación y horario completo), bicis y anclajes de Valenbisi y horario
+  de Rodalies.
+- **Planificador de viajes** (beta) con EMT, Metro y Metrobús, esperas reales
+  y el viaje dibujado en el mapa.
+- **Buscador** de paradas, líneas y estaciones.
+- **Guardadas** de todas las redes con la próxima llegada.
+- **Avisos del servicio** de EMT, Metrovalencia, Metrobús y Rodalies.
+- **Avisos de llegada**: notificación cuando el bus elegido está a unos minutos
+  (mientras la app está abierta).
+- **Widget** de pantalla de inicio con las próximas llegadas de una parada,
+  también en los estilos tintado y transparente.
+- Diseño **Liquid Glass** en iOS 26 o posterior, temas claro/oscuro/automático
+  e idiomas castellano, valenciano e inglés.
 
-- Mapa interactivo con EMT, Metrovalencia, Valenbisi, Metrobús y Rodalies.
-- Posición de autobuses EMT, recorridos y estimaciones de llegada.
-- Búsqueda de paradas, estaciones y líneas.
-- Favoritos y avisos para líneas concretas.
-- Alertas de servicio de EMT, Metrovalencia, Metrobús y Rodalies.
-- Planificador de viajes y localización de paradas cercanas.
-- Capas de transporte configurables, guardadas entre reinicios de la aplicación.
-- Temas claro, oscuro y automático.
-
-### Aplicación WearOS
-
-- Consulta de paradas cercanas, búsqueda y favoritos.
-- Datos de EMT, Metrovalencia, Metrobús, Rodalies y Valenbisi.
-- Mapa con marcadores, líneas y zoom mediante la corona del reloj.
-- Complicación y Tile con próximas llegadas y actualización periódica.
-
-Los datos pueden variar según la disponibilidad de los servicios externos.
+Los datos dependen de la disponibilidad de los servicios externos y pueden no
+coincidir exactamente con la situación en la calle.
 
 ## Capturas de pantalla
 
-### Aplicación móvil
+<!-- Capturas de un iPhone real: screenshots/ios/ -->
 
-<p align="center">
-	<img src="screenshots/home.jpeg" alt="Mapa y paradas cercanas" width="220">
-	<img src="screenshots/emt.jpeg" alt="Detalle de una parada EMT" width="220">
-	<img src="screenshots/metrobus.jpeg" alt="Detalle de una parada Metrobús" width="220">
-</p>
+## Instalar en el iPhone (gratis, sin Mac)
 
-<p align="center">
-	<img src="screenshots/line.jpeg" alt="Seguimiento de una línea" width="220">
-	<img src="screenshots/track.jpeg" alt="Recorrido de una línea" width="220">
-	<img src="screenshots/saved.jpeg" alt="Paradas guardadas" width="220">
-</p>
+La app se instala con [SideStore](https://docs.sidestore.io) y un Apple ID
+gratuito:
 
-<p align="center">
-	<img src="screenshots/valenbisi.jpeg" alt="Estación Valenbisi" width="220">
-	<img src="screenshots/rodalies.jpeg" alt="Estación Rodalies" width="220">
-	<img src="screenshots/warnings.jpeg" alt="Avisos de servicio" width="220">
-</p>
+1. Instala SideStore siguiendo su guía (solo la primera vez hace falta un
+   ordenador, vale Windows o Linux).
+2. En el iPhone, abre en Safari
+   <https://github.com/jortter/OpenTransport-Valencia-iOS/raw/ios-build/OpenTransport.ipa>.
+3. Abre el `.ipa` con SideStore (Compartir → SideStore, o *My Apps* → `+`).
+   Si pregunta por las extensiones, elige mantenerlas para tener el widget.
+4. Con un Apple ID gratuito la firma dura 7 días: activa el refresco en
+   segundo plano de SideStore o pulsa *Refresh All* de vez en cuando.
 
-### WearOS
+Requiere iOS 17 o posterior.
 
-<p align="center">
-	<img src="screenshots/main.jpeg" alt="Pantalla de paradas cercanas en WearOS" width="180">
-	<img src="screenshots/map.jpeg" alt="Mapa en WearOS" width="180">
-	<img src="screenshots/stop.jpeg" alt="Detalle de parada en WearOS" width="180">
-	<img src="screenshots/search.jpeg" alt="Búsqueda en WearOS" width="180">
-</p>
+## Compilación
 
-<p align="center">
-	<img src="screenshots/saved_wear.jpeg" alt="Paradas guardadas en WearOS" width="180">
-	<img src="screenshots/complication.jpeg" alt="Complicación de OpenTransport en la esfera" width="180">
-	<img src="screenshots/widget.jpeg" alt="Tile de próximas llegadas en WearOS" width="180">
-</p>
+No hace falta un Mac: cada push que toca `ios/` lanza
+[`.github/workflows/ios.yml`](.github/workflows/ios.yml) en un runner macOS de
+GitHub Actions, que:
 
-## Requisitos
+1. Ejecuta los tests de `OpenTransportCore`.
+2. Genera el proyecto con XcodeGen y compila la app para el simulador, con
+   capturas automáticas en la rama `ci-screenshots`.
+3. Compila un `.ipa` sin firmar y lo publica en la rama `ios-build`.
 
-- Android Studio reciente.
-- JDK 17.
-- Android SDK con API 36.
-- Un dispositivo o emulador Android para la aplicación móvil.
-- Un dispositivo o emulador WearOS para probar el módulo del reloj.
-
-El proyecto usa Gradle Wrapper, por lo que no es necesario instalar Gradle
-manualmente.
-
-## Compilar
-
-Desde la raíz del proyecto:
+Con un Mac:
 
 ```sh
-./gradlew assembleDebug
+brew install xcodegen
+cd ios && xcodegen generate && open OpenTransport.xcodeproj
 ```
 
-Para generar las versiones release:
+Los tests de la lógica (sin interfaz) también funcionan en Linux:
 
 ```sh
-./gradlew assembleRelease
+cd ios/Packages/OpenTransportCore && swift test
 ```
-
-Los APK se generan en:
-
-```text
-app/build/outputs/apk/debug/app-debug.apk
-app/build/outputs/apk/release/app-release.apk
-wear/build/outputs/apk/debug/wear-debug.apk
-wear/build/outputs/apk/release/wear-release.apk
-```
-
-También se pueden compilar los módulos por separado:
-
-```sh
-./gradlew :app:assembleDebug
-./gradlew :wear:assembleRelease
-```
-
-## Instalar mediante ADB
-
-Con un dispositivo conectado y la depuración USB activada:
-
-```sh
-adb install -r app/build/outputs/apk/debug/app-debug.apk
-adb install -r wear/build/outputs/apk/debug/wear-debug.apk
-```
-
-Comprueba la conexión con `adb devices` antes de instalar. Para probar la
-complicación, instala primero la aplicación WearOS y añádela desde el selector
-de complicaciones de la esfera.
 
 ## Estructura
 
 ```text
-app/   Aplicación Android para móvil.
-wear/  Aplicación Android independiente para WearOS.
-gradle/ Configuración del Gradle Wrapper.
+ios/
+  project.yml                  Proyecto Xcode (XcodeGen); el .xcodeproj se genera.
+  Packages/OpenTransportCore/  Datos, red y lógica, sin interfaz (Swift Package).
+  OpenTransport/               App SwiftUI: mapa MapLibre, pestañas y hojas.
+  OpenTransportWidget/         Widget (WidgetKit).
+app/src/main/assets/           Datos estáticos compartidos con la app Android.
 ```
 
-La lógica de datos y las pantallas de cada plataforma se encuentran en
-`app/src/main` y `wear/src/main`. Los datos estáticos de Rodalies y otros
-recursos del reloj están incluidos en `wear/src/main/assets`.
+La app Android original (`app/` y `wear/`) sigue en el repositorio; su
+documentación está en el [repositorio original](https://github.com/Humanoidear/OpenTransport-Valencia).
 
 ## Fuentes de datos
 
-La aplicación consume servicios públicos y APIs de EMT València,
-Metrovalencia, Valenbisi, Metrobús y Renfe/Rodalies. La disponibilidad, los
-tiempos y las incidencias dependen de esos servicios y pueden no coincidir
-exactamente con la situación en la calle.
+Servicios públicos y APIs de EMT València, Metrovalencia (FGV), Valenbisi
+(JCDecaux), Metrobús (Softour) y Renfe/Rodalies; recorridos a pie con OSRM
+sobre OpenStreetMap. Aplicación no oficial, sin relación con estos operadores.
