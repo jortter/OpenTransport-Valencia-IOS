@@ -50,7 +50,7 @@ runner macOS de GitHub Actions, que:
 1. Instala SideStore siguiendo <https://docs.sidestore.io> (solo la primera
    vez hace falta un ordenador; vale Windows o Linux).
 2. En el iPhone, abre en Safari
-   <https://github.com/jortter/OpenTransport-Valencia-IOS/raw/ios-build/OpenTransport.ipa>
+   <https://github.com/jortter/OpenTransport-Valencia-iOS/raw/ios-build/OpenTransport.ipa>
    y descarga `OpenTransport.ipa`.
 3. Ábrelo con SideStore (Compartir → SideStore, o desde *My Apps* → `+`).
 4. SideStore renueva la firma cada 7 días; actívale el refresco en segundo
