@@ -24,6 +24,11 @@ final class AppModel {
     @ObservationIgnored private(set) var planner: JourneyPlanner?
     /// The planner's network: `transit` plus the Metrobús stops and lines.
     private(set) var planTransit: TransitData?
+    /// Every Metrobús line's stops (loaded with the planner); live buses use it.
+    @ObservationIgnored private var metrobusNetwork: MetrobusNetwork = .empty
+    /// Live Metrobús buses on the lines of the selected Metrobús stop.
+    private(set) var metrobusVehicles: [MetrobusVehicle] = []
+    @ObservationIgnored private var metrobusLiveTask: Task<Void, Never>?
     /// Bumped on every places reload, so the map knows to redraw them.
     private(set) var placesVersion = 0
     private(set) var metroAssets = MetroAssets(stationNames: [:], lineColors: [:])
@@ -161,6 +166,8 @@ final class AppModel {
     /// (Android does the same when one is selected).
     func select(_ place: Place) {
         map.selectPlace(place)
+        metrobusLiveTask?.cancel()
+        metrobusVehicles = []
         guard place.network == .metrobus else { return }
         let code = String(place.id.dropFirst(3))
         Task {
@@ -177,6 +184,30 @@ final class AppModel {
             var withLines = place
             withLines.lines = lines
             map.refreshSelectedPlace(withLines)
+            startMetrobusLive(lines: lines, placeId: place.id)
+        }
+    }
+
+    /// Polls the buses of a Metrobús stop's lines while it stays selected
+    /// (their GPS fixes refresh about every 20 s).
+    private func startMetrobusLive(lines: [String], placeId: String) {
+        metrobusLiveTask?.cancel()
+        guard !lines.isEmpty else { return }
+        metrobusLiveTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self, self.map.selectedPlace?.id == placeId else { break }
+                if self.metrobusNetwork.stops.isEmpty {
+                    // The network loads with the planner a few seconds after launch.
+                    try? await Task.sleep(for: .seconds(2))
+                    continue
+                }
+                let vehicles = await self.metrobus.vehicles(lines: lines, network: self.metrobusNetwork)
+                guard !Task.isCancelled, self.map.selectedPlace?.id == placeId else { break }
+                self.metrobusVehicles = vehicles
+                try? await Task.sleep(for: .seconds(20))
+            }
+            // No clean-up here: select() clears the list, and the map only
+            // shows it while this Metrobús stop is selected.
         }
     }
 
@@ -202,6 +233,7 @@ final class AppModel {
                 let network = await self.metrobus.network()
                 if !network.stops.isEmpty {
                     let merged = network.merged(into: transit)
+                    self.metrobusNetwork = network
                     self.planner = self.makePlanner(merged, emt: emt, metrobusCodes: network.codes)
                     self.planTransit = merged
                     return

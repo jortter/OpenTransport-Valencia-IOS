@@ -29,10 +29,13 @@ struct MapScene: Equatable {
     var places: [Place] = []
     /// A planned trip: rides in their own colours, dashed walks, transfer dots.
     var journey: PlannedJourney?
+    /// Live Metrobús buses (of the selected Metrobús stop's lines).
+    var metrobusVehicles: [MetrobusVehicle] = []
 
     static func == (a: MapScene, b: MapScene) -> Bool {
         a.stopsKey == b.stopsKey && a.mainLine == b.mainLine && a.contextLines == b.contextLines
             && a.sheetVisible == b.sheetVisible && a.placesKey == b.placesKey && a.journey == b.journey
+            && a.metrobusVehicles == b.metrobusVehicles
     }
 }
 
@@ -142,6 +145,7 @@ struct TransitMapView: UIViewRepresentable {
         static let contextLayer = "emt-context-routes"
         static let bikesLayer = "emt-vb-pills"
         static let journeySource = "emt-journey"
+        static let metrobusVehiclesSource = "metrobus-vehicles"
         static let journeyDotsSource = "emt-journey-stops"
         /// JOURNEY_PALETTE in NativeMap.kt: one colour per ride of a trip.
         static let journeyPalette = [0x2563EB, 0xDB2777, 0x16A34A, 0xF59E0B, 0x7C3AED, 0x0891B2].map { UIColor(hex: $0) }
@@ -246,6 +250,22 @@ struct TransitMapView: UIViewRepresentable {
             busNumbers.textAllowsOverlap = NSExpression(forConstantValue: true)
             busNumbers.textIgnoresPlacement = NSExpression(forConstantValue: true)
             style.addLayer(busNumbers)
+
+            let metrobus = MLNShapeSource(identifier: Self.metrobusVehiclesSource, shape: nil, options: nil)
+            style.addSource(metrobus)
+            let metrobusDots = MLNCircleStyleLayer(identifier: "metrobus-vehicles", source: metrobus)
+            metrobusDots.circleColor = NSExpression(forConstantValue: UIColor(hex: 0x0EA5E9))
+            metrobusDots.circleRadius = NSExpression(forConstantValue: 13)
+            metrobusDots.circleStrokeColor = NSExpression(forConstantValue: UIColor.white)
+            metrobusDots.circleStrokeWidth = NSExpression(forConstantValue: 2)
+            style.addLayer(metrobusDots)
+            let metrobusLines = MLNSymbolStyleLayer(identifier: "metrobus-vehicle-lines", source: metrobus)
+            metrobusLines.text = NSExpression(forKeyPath: "line")
+            metrobusLines.textFontSize = NSExpression(forConstantValue: 10)
+            metrobusLines.textColor = NSExpression(forConstantValue: UIColor.white)
+            metrobusLines.textAllowsOverlap = NSExpression(forConstantValue: true)
+            metrobusLines.textIgnoresPlacement = NSExpression(forConstantValue: true)
+            style.addLayer(metrobusLines)
         }
 
         /// Metro, Valenbisi, Metrobús and Rodalies points: clustered when zoomed
@@ -470,6 +490,15 @@ struct TransitMapView: UIViewRepresentable {
                         feature.attributes = ["ci": dot.colorIndex % Self.journeyPalette.count]
                         return feature
                     })
+            }
+            if previous?.metrobusVehicles != scene.metrobusVehicles || previous == nil,
+               let source = style.source(withIdentifier: Self.metrobusVehiclesSource) as? MLNShapeSource {
+                source.shape = MLNShapeCollectionFeature(shapes: scene.metrobusVehicles.map { vehicle in
+                    let feature = MLNPointFeature()
+                    feature.coordinate = CLLocationCoordinate2D(latitude: vehicle.lat, longitude: vehicle.lon)
+                    feature.attributes = ["line": String(vehicle.line.dropFirst(2))]
+                    return feature
+                })
             }
             if previous?.placesKey != scene.placesKey, let source = style.source(withIdentifier: Self.placesSource) as? MLNShapeSource {
                 source.shape = MLNShapeCollectionFeature(shapes: scene.places.map { place in

@@ -72,6 +72,17 @@ extension Strings {
     public var beta: String { "BETA" }
 
     public var liveBusesTitle: String { pick("Autobuses en directo", "Live buses", "Autobusos en directe") }
+    /// Metrobús occupancy ("BAJA", "MEDIA", "ALTA" from the API).
+    public func occupancy(_ level: String) -> String {
+        let value: String
+        switch level.uppercased() {
+        case "BAJA": value = pick("baja", "low", "baixa")
+        case "MEDIA": value = pick("media", "medium", "mitjana")
+        case "ALTA": value = pick("alta", "high", "alta")
+        default: value = level.lowercased()
+        }
+        return pick("Ocupación \(value)", "Occupancy \(value)", "Ocupació \(value)")
+    }
     public func nextStopName(_ name: String) -> String { pick("Próxima: \(name)", "Next: \(name)", "Pròxima: \(name)") }
 
     public var diagnostics: String { pick("Diagnóstico de red", "Network diagnostics", "Diagnòstic de xarxa") }

@@ -247,37 +247,62 @@ private struct MetrobusArrivals: View {
 
     private var code: String { String(place.id.dropFirst(3)) }
 
+    /// How far a live bus is from this stop, in a straight line.
+    private func distance(to vehicle: MetrobusVehicle) -> String {
+        TransitMotion.formatDistance(TransitMotion.distanceMeters(LonLat(lon: place.lon, lat: place.lat),
+                                                                   LonLat(lon: vehicle.lon, lat: vehicle.lat)))
+    }
+
     var body: some View {
-        Section(s.nextDepartures) {
-            if let times {
-                if times.isEmpty {
-                    Text(s.noUpcomingBuses).foregroundStyle(.secondary)
-                } else {
-                    ForEach(Array(times.enumerated()), id: \.offset) { _, arrival in
-                        HStack(spacing: 12) {
-                            LineBadge(line: arrival.line)
-                            Text(arrival.destination.isEmpty ? "—" : arrival.destination).lineLimit(1)
-                            Spacer()
-                            Text(arrival.minutes)
-                                .font(.subheadline.weight(.semibold))
-                                .monospacedDigit()
-                                .foregroundStyle(Color.accentColor)
-                            PinButton(pin: ArrivalAlerts.metrobusPin(place.id, arrival.line))
+        Group {
+            Section(s.nextDepartures) {
+                if let times {
+                    if times.isEmpty {
+                        Text(s.noUpcomingBuses).foregroundStyle(.secondary)
+                    } else {
+                        ForEach(Array(times.enumerated()), id: \.offset) { _, arrival in
+                            HStack(spacing: 12) {
+                                LineBadge(line: arrival.line)
+                                Text(arrival.destination.isEmpty ? "—" : arrival.destination).lineLimit(1)
+                                Spacer()
+                                Text(arrival.minutes)
+                                    .font(.subheadline.weight(.semibold))
+                                    .monospacedDigit()
+                                    .foregroundStyle(Color.accentColor)
+                                PinButton(pin: ArrivalAlerts.metrobusPin(place.id, arrival.line))
+                            }
                         }
                     }
-                }
-                if !schedule.isEmpty {
-                    Button {
-                        showSchedule = true
-                    } label: {
-                        Label(s.timetable, systemImage: "clock")
+                    if !schedule.isEmpty {
+                        Button {
+                            showSchedule = true
+                        } label: {
+                            Label(s.timetable, systemImage: "clock")
+                        }
+                    }
+                } else {
+                    HStack {
+                        Spacer()
+                        ProgressView()
+                        Spacer()
                     }
                 }
-            } else {
-                HStack {
-                    Spacer()
-                    ProgressView()
-                    Spacer()
+            }
+            if !model.metrobusVehicles.isEmpty {
+                Section(s.liveBusesTitle) {
+                    ForEach(model.metrobusVehicles) { vehicle in
+                        HStack(spacing: 12) {
+                            LineBadge(line: vehicle.line)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(vehicle.destination.isEmpty ? "—" : vehicle.destination).lineLimit(1)
+                                if !vehicle.occupancy.isEmpty {
+                                    Text(s.occupancy(vehicle.occupancy)).font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                            Spacer()
+                            Text(distance(to: vehicle)).font(.subheadline).monospacedDigit().foregroundStyle(.secondary)
+                        }
+                    }
                 }
             }
         }

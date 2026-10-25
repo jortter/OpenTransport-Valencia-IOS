@@ -180,7 +180,8 @@ struct MapTab: View {
         if let place = map.selectedPlace {
             return MapScene(stopsKey: "none", stops: [], mainLine: nil,
                             contextLines: unique(place.lines), sheetVisible: true,
-                            placesKey: "place:\(place.id)", places: [place])
+                            placesKey: "place:\(place.id)", places: [place],
+                            metrobusVehicles: place.network == .metrobus ? model.metrobusVehicles : [])
         }
         let networks = MapPreferences.networks(networksSetting)
         return MapScene(stopsKey: networks.contains(.emt) ? "all" : "none",

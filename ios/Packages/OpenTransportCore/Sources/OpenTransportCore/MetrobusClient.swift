@@ -45,6 +45,61 @@ public final class MetrobusClient: Sendable {
             .min()
     }
 
+    /// Live positions of the buses on `lines`. There is no fleet endpoint, but
+    /// every stop's estimates carry the GPS fix of the buses heading to it,
+    /// so sampling every `step`-th stop along both directions finds every
+    /// bus on the line with a GPS unit (about 1 s per line). Buses that
+    /// report no position are left out.
+    public func vehicles(lines: [String], network: MetrobusNetwork, step: Int = 4, maxStops: Int = 60) async -> [MetrobusVehicle] {
+        var codes: [String] = []
+        var seen = Set<String>()
+        for line in lines {
+            guard let route = network.routes[line] else { continue }
+            for direction in [route.ida, route.vuelta] {
+                let ids = direction.stops
+                for (index, id) in ids.enumerated() where index % step == 0 || index == ids.count - 1 {
+                    if let stopId = Int(id), let code = network.codes[stopId], seen.insert(code).inserted { codes.append(code) }
+                }
+            }
+        }
+        codes = Array(codes.prefix(maxStops))
+        let wanted = Set(lines)
+        var byId: [Int: MetrobusVehicle] = [:]
+        for chunk in stride(from: 0, to: codes.count, by: 8) {
+            let slice = codes[chunk..<min(chunk + 8, codes.count)]
+            await withTaskGroup(of: [MetrobusVehicle].self) { group in
+                for code in slice {
+                    group.addTask { (try? await self.get("/estimacion/ocupacion/\(code)")).map(Self.parseVehicles) ?? [] }
+                }
+                for await found in group {
+                    for vehicle in found where wanted.contains(vehicle.line) { byId[vehicle.id] = vehicle }
+                }
+            }
+        }
+        return byId.values.sorted { ($0.line, $0.id) < ($1.line, $1.id) }
+    }
+
+    /// Buses with a GPS fix in one stop's estimates reply.
+    static func parseVehicles(_ text: String) -> [MetrobusVehicle] {
+        guard let items = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [[String: Any]] else { return [] }
+        var out: [MetrobusVehicle] = []
+        for item in items {
+            let line = "MB" + (item["line"].map { "\($0)" } ?? "")
+            for estimation in item["estimations"] as? [[String: Any]] ?? [] {
+                guard let id = jsonInt(estimation["vehicleId"]),
+                      let almex = estimation["almex"] as? [String: Any],
+                      let lat = jsonDouble(almex["latitude"]), let lon = jsonDouble(almex["longitude"]),
+                      lat != 0, lon != 0 else { continue }
+                let destination = (almex["DestStopName"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+                    ?? item["route"] as? String ?? ""
+                let occupancy = (estimation["ocupacion"] as? String ?? "").uppercased()
+                out.append(MetrobusVehicle(id: id, line: line, destination: destination, lat: lat, lon: lon,
+                                           occupancy: occupancy == "SIN DATOS" ? "" : occupancy))
+            }
+        }
+        return out
+    }
+
     /// The whole day's timetable for a stop code.
     public func schedule(code: String, date: Date = Date()) async -> [MetrobusTime] {
         guard let text = try? await get("/stops/code/\(code)/times?date=\(Self.dayFormat.string(from: date))") else { return [] }
@@ -204,6 +259,18 @@ public final class MetrobusClient: Sendable {
         formatter.dateFormat = "yyyyMMdd"
         return formatter
     }()
+}
+
+/// A Metrobús bus with a live GPS fix.
+public struct MetrobusVehicle: Identifiable, Hashable, Sendable {
+    public let id: Int
+    /// "MB170B"
+    public let line: String
+    public let destination: String
+    public let lat: Double
+    public let lon: Double
+    /// "BAJA", "MEDIA", "ALTA"… or empty when unknown.
+    public let occupancy: String
 }
 
 /// The Metrobús network folded into the planner.

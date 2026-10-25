@@ -116,3 +116,18 @@ final class MetrobusNetworkTests: XCTestCase {
         XCTAssertEqual(options.first?.legs.first { !$0.walk }?.line, "MB1")
     }
 }
+
+final class MetrobusVehicleTests: XCTestCase {
+    func testParsesOnlyBusesWithGPS() {
+        // Trimmed real reply of /estimacion/ocupacion/3940.
+        let reply = #"[{"line":"170B","route":"Torrent (El Vedat)","estimations":[{"vehicleId":6324,"minutesToArrival":20,"ocupacion":"SIN DATOS"},{"vehicleId":6320,"minutesToArrival":51,"ocupacion":"ALTA","almex":{"bus":"6320","DestStopName":"Cid - Hospital General","passengers":70,"latitude":"39.469726","longitude":"-0.406643","position":28,"seats":81}}]},{"line":"192B","route":"Millares","estimations":[{"vehicleId":6015,"minutesToArrival":125,"ocupacion":"SIN DATOS","almex":{"latitude":"0","longitude":"0"}}]}]"#
+        let vehicles = MetrobusClient.parseVehicles(reply)
+        XCTAssertEqual(vehicles.count, 1)
+        XCTAssertEqual(vehicles.first?.id, 6320)
+        XCTAssertEqual(vehicles.first?.line, "MB170B")
+        XCTAssertEqual(vehicles.first?.destination, "Cid - Hospital General")
+        XCTAssertEqual(vehicles.first?.occupancy, "ALTA")
+        XCTAssertEqual(vehicles.first?.lat ?? 0, 39.469726, accuracy: 1e-6)
+        XCTAssertTrue(MetrobusClient.parseVehicles("<html>").isEmpty)
+    }
+}
