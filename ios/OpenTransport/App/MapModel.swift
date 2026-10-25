@@ -78,6 +78,10 @@ final class MapModel {
         return nil
     }
 
+    /// Whether the camera trails the followed bus. Dragging or rotating the
+    /// map lets go of it (the bus stays selected) until "centre" is tapped.
+    var followCameraLocked = true
+
     func selectStop(_ id: Int) {
         guard let stop = transit?.stopsById[String(id)] else { return }
         currentLine = nil
@@ -127,6 +131,7 @@ final class MapModel {
     /// Follows one live bus of the focused line; the camera tracks it.
     func followBus(_ number: Int) {
         guard live.buses.contains(where: { $0.number == number }) else { return }
+        followCameraLocked = true
         present(.bus(number))
     }
 

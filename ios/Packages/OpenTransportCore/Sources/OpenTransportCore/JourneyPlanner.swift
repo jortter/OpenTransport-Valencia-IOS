@@ -230,7 +230,11 @@ public final class JourneyPlanner: @unchecked Sendable {
                                  transfers: c.rides.count - 1, legs: legs)
         }
 
-        let ranked = options.sorted { $0.totalMinutes < $1.totalMinutes }
+        // The same lines from a neighbouring stop is the same advice: keep the fastest.
+        var seenLines = Set<String>()
+        let ranked = options.sorted { $0.totalMinutes < $1.totalMinutes }.filter { option in
+            seenLines.insert(option.legs.compactMap(\.line).joined(separator: ">")).inserted
+        }
         // If a direct ride is at least as fast, transfer options are noise.
         let fastestDirect = ranked.filter { $0.transfers == 0 }.map(\.totalMinutes).min()
         let useful = fastestDirect.map { fastest in ranked.filter { $0.transfers == 0 || $0.totalMinutes < fastest } } ?? ranked

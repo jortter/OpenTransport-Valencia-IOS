@@ -101,7 +101,7 @@ struct PlanTab: View {
               ids.count == 2 else { return }
         // The planner is created once the network has loaded.
         while model.planner == nil { try? await Task.sleep(for: .milliseconds(200)) }
-        guard let transit = model.transit, let a = transit.stopsById[String(ids[0])], let b = transit.stopsById[String(ids[1])] else { return }
+        guard let transit = model.planTransit, let a = transit.stopsById[String(ids[0])], let b = transit.stopsById[String(ids[1])] else { return }
         from = PlanPoint(name: a.cleanName, point: LonLat(lon: a.lon, lat: a.lat))
         to = PlanPoint(name: b.cleanName, point: LonLat(lon: b.lon, lat: b.lat))
         await plan()
@@ -131,7 +131,7 @@ struct PlanTab: View {
     }
 
     private func open(_ option: JourneyOption) {
-        guard let transit = model.transit else { return }
+        guard let transit = model.planTransit else { return }
         model.tab = .map
         model.map.showJourney(PlannedJourney(option: option, transit: transit, origin: from?.point, destination: to?.point))
     }
@@ -212,13 +212,13 @@ struct StopPicker: View {
 
     var body: some View {
         NavigationStack {
-            let stops = model.transit.map { TransitSearch.stops($0.stops, query: query, includeMetro: true) } ?? []
+            let stops = model.planTransit.map { TransitSearch.stops($0.stops, query: query, includeMetro: true) } ?? []
             List(stops) { stop in
                 Button {
                     onPick(stop)
                 } label: {
                     HStack(spacing: 12) {
-                        ServiceLogo(network: stop.metro ? .metro : .emt, size: 26)
+                        ServiceLogo(network: MetrobusNetwork.isMetrobus(stop.id) ? .metrobus : stop.metro ? .metro : .emt, size: 26)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(stop.cleanName).lineLimit(1)
                             Text(stop.lines.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary).lineLimit(1)

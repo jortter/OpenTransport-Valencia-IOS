@@ -47,6 +47,9 @@ struct TransitMapView: UIViewRepresentable {
     /// The camera trails this bus every frame (Android's `follow`).
     var followedBus: Int?
     var follow3D = false
+    /// False once the user moves the map while following: the bus stays
+    /// selected but the camera is theirs.
+    var followCameraLocked = true
     /// Share of the map height covered by the sheet (0 when none).
     var sheetFraction = 0.45
     /// Bumped by the "my location" button; each change recentres on the user.
@@ -54,6 +57,8 @@ struct TransitMapView: UIViewRepresentable {
     var onSelectStop: (Int) -> Void
     var onSelectBus: (Int) -> Void
     var onSelectPlace: (String) -> Void
+    /// The user dragged, rotated or tilted the map.
+    var onCameraGesture: () -> Void = {}
 
     private var styleURL: URL { dark ? styleDark : styleLight }
 
@@ -151,6 +156,14 @@ struct TransitMapView: UIViewRepresentable {
             style = nil
             appliedScene = nil
             registeredPills = []
+        }
+
+        func mapView(_ mapView: MLNMapView, regionWillChangeWith reason: MLNCameraChangeReason, animated: Bool) {
+            // Pinch zoom keeps following; panning or turning the map takes over.
+            let takeover: MLNCameraChangeReason = [.gesturePan, .gestureRotate, .gestureTilt]
+            if !reason.intersection(takeover).isEmpty, parent.followedBus != nil, parent.followCameraLocked {
+                parent.onCameraGesture()
+            }
         }
 
         func mapView(_ mapView: MLNMapView, didFinishLoading style: MLNStyle) {
@@ -578,6 +591,7 @@ struct TransitMapView: UIViewRepresentable {
                 }
                 return
             }
+            guard parent.followCameraLocked else { return }
             let coordinate = CLLocationCoordinate2D(latitude: bus.render.lat, longitude: bus.render.lon)
             if lastFollowed != number {
                 lastFollowed = number

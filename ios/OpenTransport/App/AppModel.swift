@@ -20,8 +20,10 @@ final class AppModel {
     private(set) var incidents: [Incident]?
     /// Points of the other networks (Metro stations so far).
     private(set) var places: [Place] = []
-    /// Trip planner over EMT and Metro itineraries (built once data is loaded).
+    /// Trip planner over EMT, Metro and (once fetched) Metrobús itineraries.
     @ObservationIgnored private(set) var planner: JourneyPlanner?
+    /// The planner's network: `transit` plus the Metrobús stops and lines.
+    private(set) var planTransit: TransitData?
     /// Bumped on every places reload, so the map knows to redraw them.
     private(set) var placesVersion = 0
     private(set) var metroAssets = MetroAssets(stationNames: [:], lineColors: [:])
@@ -88,11 +90,9 @@ final class AppModel {
             for line in rodaliesData.routes.keys { extraColors[line] = 0xE30613 }
             replacePlaces(of: .rodalies, with: rodaliesData.places)
             map.configure(transit: data, client: emt)
-            planner = JourneyPlanner(
-                transit: data,
-                streetWalk: { a, b in await EmtClient.walkMetrics(a, b) },
-                nextBus: { stop, line in await emt.nextBus(stopId: stop, line: line) }
-            )
+            planner = makePlanner(data, emt: emt, metrobusCodes: [:])
+            planTransit = data
+            startMetrobusPlanner(data, emt: emt)
             location.start()
             alerts.start(model: self)
             startMetrobus()
@@ -177,6 +177,37 @@ final class AppModel {
             var withLines = place
             withLines.lines = lines
             map.refreshSelectedPlace(withLines)
+        }
+    }
+
+    private func makePlanner(_ transit: TransitData, emt: EmtClient, metrobusCodes: [Int: String]) -> JourneyPlanner {
+        let metrobus = self.metrobus
+        return JourneyPlanner(
+            transit: transit,
+            streetWalk: { a, b in await EmtClient.walkMetrics(a, b) },
+            nextBus: { stop, line in
+                if let code = metrobusCodes[stop] { return await metrobus.nextBus(code: code, line: line) }
+                return await emt.nextBus(stopId: stop, line: line)
+            }
+        )
+    }
+
+    /// Folds the Metrobús lines into the planner, like Android. Fetching
+    /// every line's stops takes a few seconds; until then plans use EMT and
+    /// Metro only. Retries a few times if the service is unreachable.
+    private func startMetrobusPlanner(_ transit: TransitData, emt: EmtClient) {
+        Task { [weak self] in
+            for attempt in 0..<5 {
+                guard let self else { return }
+                let network = await self.metrobus.network()
+                if !network.stops.isEmpty {
+                    let merged = network.merged(into: transit)
+                    self.planner = self.makePlanner(merged, emt: emt, metrobusCodes: network.codes)
+                    self.planTransit = merged
+                    return
+                }
+                try? await Task.sleep(for: .seconds(60 * (attempt + 1)))
+            }
         }
     }
 

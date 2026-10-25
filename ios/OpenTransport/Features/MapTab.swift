@@ -29,11 +29,13 @@ struct MapTab: View {
                     cameraRequest: map.cameraRequest,
                     followedBus: map.followedBus,
                     follow3D: map.follow3D,
+                    followCameraLocked: map.followCameraLocked,
                     sheetFraction: detent == MapTab.peek ? 0.32 : 0.5,
                     recenterRequest: recenterRequest,
                     onSelectStop: { map.selectStop($0) },
                     onSelectBus: { map.followBus($0) },
-                    onSelectPlace: { id in if let place = model.place(id) { model.select(place) } }
+                    onSelectPlace: { id in if let place = model.place(id) { model.select(place) } },
+                    onCameraGesture: { map.followCameraLocked = false }
                 )
                 .ignoresSafeArea(edges: .top)
                 .overlay(alignment: .top) { searchButton }

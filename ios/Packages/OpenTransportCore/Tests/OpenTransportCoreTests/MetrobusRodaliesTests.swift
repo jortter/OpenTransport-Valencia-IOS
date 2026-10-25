@@ -78,3 +78,41 @@ final class MetrobusRodaliesTests: XCTestCase {
         XCTAssertTrue(incidents[0].url.hasSuffix("aviso.pdf"))
     }
 }
+
+final class MetrobusNetworkTests: XCTestCase {
+    private func reply(_ stops: [(String, Double, Double)]) -> String {
+        let items = stops.map { #"{"stop_code":"\#($0.0)","stop_name":"S\#($0.0)","stop_lat":\#($0.1),"stop_lon":\#($0.2)}"# }
+        return #"{"isCircular":false,"stops":[\#(items.joined(separator: ","))]}"#
+    }
+
+    func testBuildsStopsAndBothDirections() {
+        var builder = MetrobusNetwork.Builder(baseId: MetrobusNetwork.baseId)
+        builder.add(line: "MB1", direction: 0, reply: reply([("10", 39.40, -0.40), ("11", 39.41, -0.41), ("12", 39.42, -0.42)]))
+        builder.add(line: "MB1", direction: 1, reply: reply([("12", 39.42, -0.42), ("10", 39.40, -0.40)]))
+        builder.add(line: "MB2", direction: 0, reply: reply([("11", 39.41, -0.41), ("20", 39.43, -0.43)]))
+        builder.add(line: "MB3", direction: 0, reply: "not json")
+        let network = builder.build()
+
+        XCTAssertEqual(network.stops.count, 4) // shared stops are merged by code
+        XCTAssertTrue(network.stops.allSatisfy { MetrobusNetwork.isMetrobus($0.id) })
+        let transfer = network.stops.first { network.codes[$0.id] == "11" }
+        XCTAssertEqual(transfer?.lines, ["MB1", "MB2"])
+        XCTAssertEqual(network.routes["MB1"]?.ida.stops.count, 3)
+        XCTAssertEqual(network.routes["MB1"]?.vuelta.stops.count, 2)
+        XCTAssertEqual(network.routes["MB2"]?.vuelta.stops.count, 2) // one direction: reused
+        XCTAssertNil(network.routes["MB3"])
+        XCTAssertEqual(network.routes["MB1"]?.ida.shapes.first?.count, 3)
+    }
+
+    func testPlannerUsesMergedMetrobus() async {
+        var builder = MetrobusNetwork.Builder(baseId: MetrobusNetwork.baseId)
+        builder.add(line: "MB1", direction: 0, reply: reply([("10", 39.40, -0.40), ("11", 39.43, -0.40)]))
+        let network = builder.build()
+        let transit = network.merged(into: TransitData(stops: [], stopsById: [:], routes: [:]))
+        let planner = JourneyPlanner(transit: transit,
+                                     streetWalk: { a, b in let d = TransitMotion.distanceMeters(a, b); return (d, d) },
+                                     nextBus: { _, _ in 3 })
+        let options = await planner.plan(from: LonLat(lon: -0.40, lat: 39.40), to: LonLat(lon: -0.40, lat: 39.43))
+        XCTAssertEqual(options.first?.legs.first { !$0.walk }?.line, "MB1")
+    }
+}

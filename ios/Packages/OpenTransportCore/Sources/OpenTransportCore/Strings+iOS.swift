@@ -11,6 +11,7 @@ extension Strings {
     public func busTitle(_ number: Int) -> String { pick("Autobús \(number)", "Bus \(number)", "Autobús \(number)") }
     public var nextStops: String { pick("Próximas paradas", "Next stops", "Pròximes parades") }
     public var view3D: String { pick("Vista 3D", "3D view", "Vista 3D") }
+    public var centerOnBus: String { pick("Centrar en el bus", "Centre on the bus", "Centra en el bus") }
 
     public var mechanicalBikes: String { pick("Mecánicas", "Mechanical", "Mecàniques") }
     public var electricBikes: String { pick("Eléctricas", "Electric", "Elèctriques") }

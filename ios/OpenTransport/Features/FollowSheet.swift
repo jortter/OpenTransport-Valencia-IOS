@@ -47,6 +47,16 @@ struct FollowSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
+                    if !model.map.followCameraLocked {
+                        Button {
+                            model.map.followCameraLocked = true
+                        } label: {
+                            Image(systemName: "scope")
+                        }
+                        .accessibilityLabel(s.centerOnBus)
+                    }
+                }
+                ToolbarItem(placement: .topBarLeading) {
                     Button {
                         model.map.follow3D.toggle()
                     } label: {
