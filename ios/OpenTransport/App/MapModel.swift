@@ -9,6 +9,8 @@ enum MapSheet: Identifiable, Hashable {
     case line(String)
     case bus(Int)
     case place(String)
+    /// A live Metrobús bus, opened from the selected Metrobús stop.
+    case metrobusBus(Int)
     case nearby
     case journey
 
@@ -18,6 +20,7 @@ enum MapSheet: Identifiable, Hashable {
         case .line(let line): return "line-\(line)"
         case .bus(let number): return "bus-\(number)"
         case .place(let id): return "place-\(id)"
+        case .metrobusBus(let id): return "metrobus-bus-\(id)"
         case .nearby: return "nearby"
         case .journey: return "journey"
         }
@@ -129,6 +132,13 @@ final class MapModel {
     }
 
     /// Follows one live bus of the focused line; the camera tracks it.
+    /// Opens a live Metrobús bus of the selected stop and centres on it.
+    func selectMetrobusBus(_ vehicle: MetrobusVehicle) {
+        guard selectedPlace?.network == .metrobus else { return }
+        present(.metrobusBus(vehicle.id))
+        move(.center(LonLat(lon: vehicle.lon, lat: vehicle.lat), zoom: 15.5))
+    }
+
     func followBus(_ number: Int) {
         guard live.buses.contains(where: { $0.number == number }) else { return }
         followCameraLocked = true
@@ -136,7 +146,10 @@ final class MapModel {
     }
 
     private func present(_ next: MapSheet) {
-        if case .place = next {} else { selectedPlace = nil }
+        switch next {
+        case .place, .metrobusBus: break // the bus belongs to the selected stop
+        default: selectedPlace = nil
+        }
         if case .journey = next {} else { journey = nil }
         lastPresented = next
         sheet = next
@@ -148,6 +161,11 @@ final class MapModel {
         // Leaving a followed bus goes back to its line, as on Android.
         if case .bus = lastPresented, let line = currentLine {
             present(.line(line))
+            return
+        }
+        // Leaving a Metrobús bus goes back to its stop.
+        if case .metrobusBus = lastPresented, let place = selectedPlace {
+            present(.place(place.id))
             return
         }
         currentLine = nil

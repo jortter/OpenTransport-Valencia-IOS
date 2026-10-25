@@ -41,6 +41,10 @@ public final class JourneyPlanner: @unchecked Sendable {
     private let nextBus: NextBus
     private var sequence: [String: [String]] = [:]
     private var position: [String: [String: Int]] = [:]
+    /// Stops within a short walk of each stop (other networks included), for
+    /// changes between stops that are not the same one: an EMT stop and the
+    /// Metro or Metrobús stop across the street.
+    private var neighbours: [Int: [(stop: Stop, meters: Double)]] = [:]
 
     static let detour = 1.25
     static let rideMetersPerSecond = 5.0
@@ -48,6 +52,8 @@ public final class JourneyPlanner: @unchecked Sendable {
     public static let maxWalkMeters = 1000.0
     static let maxRideStops = 30
     static let transferPenalty = 3.0
+    /// Longest straight-line walk between two stops to change lines.
+    static let maxTransferWalk = 300.0
     static let defaultWait = 6
     static let maxWait = 180
     static let maxOptions = 4
@@ -64,6 +70,36 @@ public final class JourneyPlanner: @unchecked Sendable {
                 position[key(line, dir)] = index
             }
         }
+        neighbours = Self.neighbours(of: transit.stops, within: Self.maxTransferWalk)
+    }
+
+    /// EMT (0), Metro (1) or Metrobús (2), from the id ranges the loaders use.
+    static func network(_ stopId: Int) -> Int { stopId / TransitDataLoader.metroIdBase }
+
+    /// Stops within `meters` of each other, found through a coarse grid so it
+    /// stays linear in the number of stops.
+    static func neighbours(of stops: [Stop], within meters: Double) -> [Int: [(stop: Stop, meters: Double)]] {
+        let cell = 0.004 // ≈ 440 m of latitude, larger than `meters`
+        func key(_ lat: Double, _ lon: Double) -> String { "\(Int((lat / cell).rounded(.down))):\(Int((lon / cell).rounded(.down)))" }
+        var grid: [String: [Stop]] = [:]
+        for stop in stops { grid[key(stop.lat, stop.lon), default: []].append(stop) }
+        var out: [Int: [(stop: Stop, meters: Double)]] = [:]
+        for stop in stops {
+            let row = Int((stop.lat / cell).rounded(.down)), column = Int((stop.lon / cell).rounded(.down))
+            var near: [(stop: Stop, meters: Double)] = []
+            for dr in -1...1 {
+                for dc in -1...1 {
+                    // Only other networks: changing between EMT lines happens at a shared stop,
+                    // and every EMT stop nearby would multiply the search in the centre.
+                    for other in grid["\(row + dr):\(column + dc)"] ?? [] where Self.network(other.id) != Self.network(stop.id) {
+                        let d = TransitMotion.distanceMeters(LonLat(lon: stop.lon, lat: stop.lat), LonLat(lon: other.lon, lat: other.lat))
+                        if d <= meters { near.append((other, d)) }
+                    }
+                }
+            }
+            if !near.isEmpty { out[stop.id] = Array(near.sorted { $0.meters < $1.meters }.prefix(4)) }
+        }
+        return out
     }
 
     private func key(_ line: String, _ dir: String) -> String { "\(line)|\(dir)" }
@@ -113,9 +149,15 @@ public final class JourneyPlanner: @unchecked Sendable {
         let origin: Stop
         let destination: Stop
         let rides: [Ride]
+        /// Metres walked between the two rides (0 when changing at the same stop).
+        var transferWalk = 0.0
 
         var signature: String { rides.map { "\($0.line):\($0.board.name)" }.joined(separator: "|") }
     }
+
+    /// Minutes to walk a straight-line distance between two stops (street
+    /// detour at 1 m/s, as in the walking fallback).
+    static func walkMinutes(_ meters: Double) -> Double { meters * detour / 60 }
 
     /// Walks to (or from) several stops at once.
     private func walks(_ stops: [Stop], _ walk: @escaping @Sendable (Stop) async -> Walk) async -> [Int: Walk] {
@@ -162,16 +204,20 @@ public final class JourneyPlanner: @unchecked Sendable {
                     guard i + 1 <= last else { continue }
                     for k in (i + 1)...last {
                         guard let transfer = transit.stopsById[seq[k]], transfer.id != originStop.id else { continue }
-                        for line2 in linesAt(transfer.id).subtracting([line]).sorted() where destLines.contains(line2) {
-                            for dir2 in ["ida", "vuelta"] {
-                                guard let ix = position[key(line2, dir2)]?[String(transfer.id)] else { continue }
-                                for destStop in destStops where walkD[destStop.id] != nil && destStop.lines.contains(line2) {
-                                    guard let j2 = position[key(line2, dir2)]?[String(destStop.id)], j2 > ix else { continue }
-                                    let first = Ride(line: line, dir: dir, board: originStop, alight: transfer, stops: k - i,
-                                                     minutes: self.ride(line, dir, from: i, to: k))
-                                    let second = Ride(line: line2, dir: dir2, board: transfer, alight: destStop, stops: j2 - ix,
-                                                      minutes: self.ride(line2, dir2, from: ix, to: j2))
-                                    candidates.append(Candidate(origin: originStop, destination: destStop, rides: [first, second]))
+                        // Change at this stop, or walk to a nearby one (another network's).
+                        for (board2, walk) in [(transfer, 0.0)] + (neighbours[transfer.id] ?? []) {
+                            for line2 in linesAt(board2.id).subtracting([line]).sorted() where destLines.contains(line2) {
+                                for dir2 in ["ida", "vuelta"] {
+                                    guard let ix = position[key(line2, dir2)]?[String(board2.id)] else { continue }
+                                    for destStop in destStops where walkD[destStop.id] != nil && destStop.lines.contains(line2) {
+                                        guard let j2 = position[key(line2, dir2)]?[String(destStop.id)], j2 > ix else { continue }
+                                        let first = Ride(line: line, dir: dir, board: originStop, alight: transfer, stops: k - i,
+                                                         minutes: self.ride(line, dir, from: i, to: k))
+                                        let second = Ride(line: line2, dir: dir2, board: board2, alight: destStop, stops: j2 - ix,
+                                                          minutes: self.ride(line2, dir2, from: ix, to: j2))
+                                        candidates.append(Candidate(origin: originStop, destination: destStop, rides: [first, second],
+                                                                    transferWalk: walk))
+                                    }
                                 }
                             }
                         }
@@ -183,7 +229,7 @@ public final class JourneyPlanner: @unchecked Sendable {
         func total(_ c: Candidate, wait: (Ride) -> Int) -> Double {
             guard let o = walkO[c.origin.id], let d = walkD[c.destination.id] else { return .infinity }
             return o.seconds / 60 + d.seconds / 60 + Double(c.rides.count - 1) * Self.transferPenalty
-                + c.rides.reduce(0) { $0 + Double(wait($1)) + $1.minutes }
+                + Self.walkMinutes(c.transferWalk) + c.rides.reduce(0) { $0 + Double(wait($1)) + $1.minutes }
         }
 
         // Best few by the default wait, one per signature.
@@ -219,14 +265,19 @@ public final class JourneyPlanner: @unchecked Sendable {
             guard minutes.isFinite else { return nil }
             var legs = [JourneyLeg.walking(minutes: max(1, Int((o.seconds / 60).rounded())), meters: Int(o.meters.rounded()),
                                            to: c.origin.name)]
-            for ride in c.rides {
+            for (index, ride) in c.rides.enumerated() {
+                if index > 0, c.transferWalk > 0 {
+                    legs.append(.walking(minutes: max(1, Int(Self.walkMinutes(c.transferWalk).rounded())),
+                                         meters: Int((c.transferWalk * Self.detour).rounded()), to: ride.board.name))
+                }
                 legs.append(JourneyLeg(walk: false, minutes: max(1, Int(ride.minutes.rounded())), meters: 0, line: ride.line,
                                        direction: ride.dir, towards: terminus(ride.line, ride.dir), boardStop: ride.board.name,
                                        alightStop: ride.alight.name, stops: ride.stops, waitMinutes: wait(ride),
                                        boardStopId: ride.board.id, alightStopId: ride.alight.id))
             }
             legs.append(.walking(minutes: max(1, Int((d.seconds / 60).rounded())), meters: Int(d.meters.rounded()), to: "destination"))
-            return JourneyOption(totalMinutes: Int(minutes.rounded()), walkMeters: Int((o.meters + d.meters).rounded()),
+            return JourneyOption(totalMinutes: Int(minutes.rounded()),
+                                 walkMeters: Int((o.meters + d.meters + c.transferWalk * Self.detour).rounded()),
                                  transfers: c.rides.count - 1, legs: legs)
         }
 

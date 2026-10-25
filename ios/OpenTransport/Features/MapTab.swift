@@ -35,7 +35,8 @@ struct MapTab: View {
                     onSelectStop: { map.selectStop($0) },
                     onSelectBus: { map.followBus($0) },
                     onSelectPlace: { id in if let place = model.place(id) { model.select(place) } },
-                    onCameraGesture: { map.followCameraLocked = false }
+                    onCameraGesture: { map.followCameraLocked = false },
+                    onSelectMetrobusBus: { map.selectMetrobusBus($0) }
                 )
                 .ignoresSafeArea(edges: .top)
                 .overlay(alignment: .top) { searchButton }
@@ -52,6 +53,7 @@ struct MapTab: View {
                 case .stop(let id): StopSheet(stopId: id)
                 case .line(let line): LineSheet(line: line)
                 case .bus(let number): FollowSheet(number: number)
+                case .metrobusBus(let id): MetrobusBusSheet(id: id)
                 case .place: if let place = map.selectedPlace { PlaceSheet(place: place) }
                 case .nearby: NearbySheet()
                 case .journey: if let journey = map.journey { JourneySheet(option: journey.option) }
@@ -62,7 +64,7 @@ struct MapTab: View {
         }
         .onChange(of: map.sheet?.id) { _, _ in
             switch map.sheet {
-            case .line, .bus: detent = MapTab.peek
+            case .line, .bus, .metrobusBus: detent = MapTab.peek
             case .some: detent = .medium
             case nil: break
             }

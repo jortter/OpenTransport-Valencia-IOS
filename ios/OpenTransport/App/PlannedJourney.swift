@@ -42,6 +42,11 @@ struct PlannedJourney: Equatable {
         for (index, leg) in rides.enumerated() {
             guard let line = leg.line, let route = transit.routes[line],
                   let board = stop(leg.boardStopId), let alight = stop(leg.alightStopId) else { continue }
+            // A change on foot to a nearby stop of another network.
+            if index > 0, let previous = stop(rides[index - 1].alightStopId), previous.id != board.id {
+                segments.append(Segment(walk: true, points: [LonLat(lon: previous.lon, lat: previous.lat),
+                                                             LonLat(lon: board.lon, lat: board.lat)], colorIndex: 0))
+            }
             let points = Self.legShape(route, direction: leg.direction, board: board, alight: alight)
             if points.count >= 2 { segments.append(Segment(walk: false, points: points, colorIndex: index)) }
             dot(LonLat(lon: board.lon, lat: board.lat), index)

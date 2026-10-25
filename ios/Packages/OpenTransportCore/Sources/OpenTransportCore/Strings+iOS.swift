@@ -72,6 +72,14 @@ extension Strings {
     public var beta: String { "BETA" }
 
     public var liveBusesTitle: String { pick("Autobuses en directo", "Live buses", "Autobusos en directe") }
+    public var metrobusPositionNote: String {
+        pick("Posición GPS del autobús; se actualiza cada 20 s aproximadamente.",
+             "The bus's GPS position, refreshed about every 20 s.",
+             "Posició GPS de l'autobús; s'actualitza cada 20 s aproximadament.")
+    }
+    public var metrobusBusGone: String {
+        pick("Este autobús ya no envía su posición.", "This bus no longer reports its position.", "Este autobús ja no envia la seua posició.")
+    }
     /// Metrobús occupancy ("BAJA", "MEDIA", "ALTA" from the API).
     public func occupancy(_ level: String) -> String {
         let value: String

@@ -66,4 +66,41 @@ final class JourneyPlannerTests: XCTestCase {
         XCTAssertFalse(options.isEmpty)
         XCTAssertTrue(options.allSatisfy { $0.totalMinutes < 200 })
     }
+
+    /// EMT line 1 to B, then a 100 m walk to Metrobús stop M for MB1 to N.
+    func testWalkingTransferToAnotherNetwork() async {
+        let emtA = Stop(id: 1, name: "A", lines: ["1"], lat: 39.4700, lon: -0.3800)
+        let emtB = Stop(id: 2, name: "B", lines: ["1"], lat: 39.4800, lon: -0.3800)
+        let mbM = Stop(id: 2_000_000, name: "M", lines: ["MB1"], lat: 39.4809, lon: -0.3800)
+        let mbN = Stop(id: 2_000_001, name: "N", lines: ["MB1"], lat: 39.5200, lon: -0.3800)
+        let all = [emtA, emtB, mbM, mbN]
+        var byId: [String: Stop] = [:]
+        for stop in all { byId[String(stop.id)] = stop }
+        let routes = [
+            "1": BusRoute(ida: RouteDirection(shapes: [], stops: ["1", "2"]), vuelta: RouteDirection(shapes: [], stops: ["2", "1"])),
+            "MB1": BusRoute(ida: RouteDirection(shapes: [], stops: ["2000000", "2000001"]),
+                            vuelta: RouteDirection(shapes: [], stops: ["2000001", "2000000"])),
+        ]
+        let planner = JourneyPlanner(transit: TransitData(stops: all, stopsById: byId, routes: routes),
+                                     streetWalk: { a, b in let d = TransitMotion.distanceMeters(a, b); return (d, d) },
+                                     nextBus: { _, _ in 2 })
+        let options = await planner.plan(from: LonLat(lon: emtA.lon, lat: emtA.lat), to: LonLat(lon: mbN.lon, lat: mbN.lat))
+        let option = options.first { $0.transfers == 1 }
+        XCTAssertNotNil(option)
+        XCTAssertEqual(option?.legs.compactMap(\.line), ["1", "MB1"])
+        // walk to A, ride 1, walk B → M, ride MB1, walk to the destination
+        XCTAssertEqual(option?.legs.map(\.walk), [true, false, true, false, true])
+        XCTAssertEqual(option?.legs[2].toStop, "M")
+    }
+
+    func testNeighboursOnlyAcrossNetworks() {
+        let stops = [Stop(id: 1, name: "E1", lines: [], lat: 39.47, lon: -0.38),
+                     Stop(id: 2, name: "E2", lines: [], lat: 39.4705, lon: -0.38),
+                     Stop(id: 1_000_000, name: "Metro", lines: [], lat: 39.4702, lon: -0.38),
+                     Stop(id: 2_000_000, name: "Far", lines: [], lat: 39.49, lon: -0.38)]
+        let near = JourneyPlanner.neighbours(of: stops, within: 300)
+        XCTAssertEqual(near[1]?.map(\.stop.id), [1_000_000]) // not the other EMT stop, not the far one
+        XCTAssertEqual(Set(near[1_000_000]?.map(\.stop.id) ?? []), [1, 2])
+        XCTAssertNil(near[2_000_000])
+    }
 }

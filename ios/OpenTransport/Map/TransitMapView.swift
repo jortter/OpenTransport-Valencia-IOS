@@ -62,6 +62,7 @@ struct TransitMapView: UIViewRepresentable {
     var onSelectPlace: (String) -> Void
     /// The user dragged, rotated or tilted the map.
     var onCameraGesture: () -> Void = {}
+    var onSelectMetrobusBus: (MetrobusVehicle) -> Void = { _ in }
 
     private var styleURL: URL { dark ? styleDark : styleLight }
 
@@ -649,6 +650,14 @@ struct TransitMapView: UIViewRepresentable {
                     parent.onSelectBus(nearest.0)
                     return
                 }
+            }
+            let metrobus = parent.scene.metrobusVehicles.map { vehicle -> (MetrobusVehicle, CGFloat) in
+                let p = map.convert(CLLocationCoordinate2D(latitude: vehicle.lat, longitude: vehicle.lon), toPointTo: map)
+                return (vehicle, hypot(p.x - point.x, p.y - point.y))
+            }.min { $0.1 < $1.1 }
+            if let metrobus, metrobus.1 <= 36 {
+                parent.onSelectMetrobusBus(metrobus.0)
+                return
             }
 
             let rect = CGRect(x: point.x - 15, y: point.y - 15, width: 30, height: 30)
